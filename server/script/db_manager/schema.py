@@ -15,34 +15,44 @@ from datetime import datetime
 class Base(DeclarativeBase):
     pass
 
-class PlantStat(Base):
-    __tablename__ = "plant_stat"
-    plant_id: Mapped[int] = mapped_column("plant_id", primary_key=True)
+class PlantType(Base):
+    __tablename__ = "plant_type"
+    id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=False)
+    name: Mapped[str] = mapped_column("name", String(30))
+
+    plants: Mapped[List["Plant"]] = relationship(back_populates="plant_type")
+    histories: Mapped[List["PlantStatistics"]] = relationship(
+        back_populates="plant_type"
+    )
+
+class Plant(Base):
+    __tablename__ = "plant"
+    id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=False)
+    name: Mapped[str] = mapped_column("name", String(30))
+    type_id: Mapped[int] = mapped_column("type_id", ForeignKey("plant_type.id"))
     maturity: Mapped[float] = mapped_column("maturity")
     is_disease: Mapped[bool] = mapped_column("is_disease")
 
-    histories: Mapped[List["PlantHistory"]] = relationship(
-        back_populates="plant", cascade="all, delete-orphan"
-    )
+    plant_type: Mapped["PlantType"] = relationship(back_populates="plants")
 
-class PlantHistory(Base):
-    __tablename__ = "plant_history"
-    id: Mapped[int] = mapped_column("id", primary_key=True, auto_increment=True)
+class PlantStatistics(Base):
+    __tablename__ = "plant_statistics"
+    id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=True)
     created_at: Mapped[datetime] = mapped_column(
         "created_at",
         DateTime,
         server_default=func.now()
     )
-    plant_id: Mapped[int] = mapped_column(ForeignKey("plant_stat.plant_id"))
-    maturity_rate: Mapped[float] = mapped_column("maturity_rate")
-    disease_rate: Mapped[float] = mapped_column("disease_rate")
+    type_id: Mapped[int] = mapped_column(ForeignKey("plant_type.id"))
+    avg_maturity: Mapped[float] = mapped_column("avg_maturity")
+    disease_ratio: Mapped[float] = mapped_column("disease_ratio")
 
-    plant: Mapped["PlantStat"] = relationship(back_populates="histories")
+    plant_type: Mapped["PlantType"] = relationship(back_populates="histories")
 
 
 class SensorType(Base):
     __tablename__ = "sensor_type"
-    id: Mapped[int] = mapped_column("id", mysql.TINYINT, primary_key=True)
+    id: Mapped[int] = mapped_column("id", mysql.TINYINT, primary_key=True, autoincrement=False)
     type_name: Mapped[str] = mapped_column("type_name", String(20))
 
     sensors: Mapped[List["Sensor"]] = relationship(
@@ -51,9 +61,9 @@ class SensorType(Base):
 
 class Sensor(Base):
     __tablename__ = "sensor"
-    id: Mapped[int] = mapped_column("id", primary_key=True)
+    id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=False)
     type_id: Mapped[int] = mapped_column("type_id", mysql.TINYINT, ForeignKey("sensor_type.id"))
-    value: Mapped[float | None] = mapped_column("value")
+    value: Mapped[float] = mapped_column("value")
     sensor_type: Mapped[SensorType] = relationship(
         back_populates="sensors"
     )
@@ -63,14 +73,14 @@ class Sensor(Base):
 
 class SensorHistory(Base):
     __tablename__ = "sensor_history"
-    id: Mapped[int] = mapped_column("id", primary_key=True, auto_increment=True)
+    id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=True)
     created_at: Mapped[datetime] = mapped_column(
         "created_at",
         DateTime,
         server_default=func.now()
     )
     sensor_id: Mapped[int] = mapped_column("sensor_id", ForeignKey("sensor.id"))
-    value: Mapped[float | None] = mapped_column("value")
+    value: Mapped[float] = mapped_column("value")
 
     referred_sensor: Mapped[Sensor] = relationship(
         back_populates="histories"
@@ -78,12 +88,12 @@ class SensorHistory(Base):
 
 class RobotHistory(Base):
     __tablename__ = "robot_history"
-    id: Mapped[int] = mapped_column("id", primary_key=True, auto_increment=True)
+    id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=True)
     created_at: Mapped[datetime] = mapped_column(
         "created_at",
         DateTime,
         server_default=func.now()
     )
-    stat: Mapped[str] = mapped_column("stat", String(30))
+    state: Mapped[str] = mapped_column("state", String(30))
 
 
