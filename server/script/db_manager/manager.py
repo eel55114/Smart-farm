@@ -328,18 +328,64 @@ class DBManager:
             session.rollback()
             return [], e
 
-
-    # todo
-    def get_plant_statistics(self, type_ids:list[int]) -> tuple[list[datatype.Plant], Exception | None]:
+    def get_plant_statistics(
+            self,
+            type_ids:list[int],
+            start_date:datetime|None = None,
+            end_date:datetime|None = None,
+            n:int|None = None,
+            offset:int|None = None
+    ) -> tuple[list[datatype.Plant], Exception | None]:
         """
         `plant_statistics`에 기록된 로그를 가져옵니다.
 
         Args:
+            type_ids (list[int]): 가져올 작물의 유형(들)
+            start_date (datetime, optional): 검색 시작일
+            end_date (datetime, optional): 검색 종료일
+            n (int, optional): 데이터의 최대 개수 (pagination에 사용)
+            offset (int, optional): 최신 데이터와의 오프셋 (pagination에 사용)
 
         Returns:
-
+            tuple[result, error]:
+            - result (list[datatype.PlantStatistics])
+            - error (Exception | None): 발생한 에러
         """
-        pass
+
+        session = self.session_local()
+        try:
+            stmt = (
+                select(schema.PlantStatistics)
+                .where(schema.PlantStatistics.type_id.in_(type_ids))
+                .order_by(schema.PlantStatistics.id.desc())
+            )
+
+            if start_date is not None:
+                stmt = stmt.where(schema.PlantStatistics.created_at >= start_date)
+            if end_date is not None:
+                stmt = stmt.where(schema.PlantStatistics.created_at < end_date)
+            if n is not None:
+                stmt = stmt.limit(n)
+            if offset is not None:
+                stmt = stmt.offset(offset)
+
+            data = session.scalars(stmt).all()
+
+            result = []
+            for datum in data:
+                result.append(datatype.PlantStatistics(
+                    id = datum.id,
+                    created_at = datum.created_at,
+                    type_id = datum.type_id,
+                    avg_maturity = datum.avg_maturity,
+                    disease_ratio = datum.disease_ratio
+                ))
+
+            return result, None
+
+        except Exception as e:
+            session.rollback()
+            return [], e
 
     def calculate_plant_statistics(self) -> tuple[list[datatype.PlantStatistics], Exception | None]:
         """
