@@ -1,10 +1,10 @@
 from contextlib import contextmanager
 from datetime import datetime
 
-import datatype
-import schema
+from . import datatype
+from . import schema
 from sqlalchemy import create_engine, select, func, cast, Float
-from sqlalchemy.orm import joinedload, scoped_session, sessionmaker
+from sqlalchemy.orm import joinedload, scoped_session, sessionmaker, contains_eager
 
 
 class DBManager:
@@ -293,12 +293,13 @@ class DBManager:
             session.rollback()
             return e
 
-    def get_plant_state(self, ids:list[int]) -> tuple[list[datatype.Plant], Exception | None]:
+    def get_plant_state(self, ids:list[int], all:bool = False) -> tuple[list[datatype.Plant], Exception | None]:
         """
         `plant` 테이블의 현재 상태를 가져옵니다
 
         Args:
             ids (list[int]): 가져올 작물들의 ID
+            all (bool): 전체 가져오기. default=false
 
         Returns:
             tuple[result, error]:
@@ -308,7 +309,10 @@ class DBManager:
 
         session = self.session_local()
         try:
-            stmt = select(schema.Plant).where(schema.Plant.id.in_(ids))
+            stmt = select(schema.Plant)
+            if not all:
+                stmt = stmt.where(schema.Plant.id.in_(ids))
+
             data = session.scalars(stmt).all()
             result = []
             for datum in data:
@@ -431,6 +435,33 @@ class DBManager:
             session.rollback()
             return [], e
 
+    def get_active_plant_type(self) -> tuple[dict[int, str], Exception | None]:
+        """
+        현재 `plant`테이블에 기록된 작물에 해당하는 `plant_type`을 가져옵니다.
+
+        Returns:
+            tuple[result, error]:
+            - result (dict[int, str): 각 작물 타입에 대한 (타입 ID, 타입명)
+            - error (Exception | None): 발생한 에러
+        """
+
+        session = self.session_local()
+        try:
+            stmt = (select(schema.PlantType)
+                    .join(schema.PlantType.plants) # Plant 테이블과 INNER JOIN
+                    .distinct())
+
+            data = session.scalars(stmt).all()
+            result = dict()
+            for datum in data:
+                result[datum.id] = datum.name
+
+            return result, None
+        except Exception as e:
+            session.rollback()
+            return dict(), e
+
+
     @contextmanager
     def session_scope(self):
         try:
@@ -443,7 +474,15 @@ class DBManager:
         database: str,
         username: str = "root",
         password: str = "0000",
-        host: str = "localhost",
+        host: str = "127.0.0.1",
         port: int = 3306,
     ):
         return f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}"
+
+
+if __name__ == "__main__":
+    url = DBManager.make_url(database="farm")
+    print(url)
+    db = DBManager(url)
+    with db.session_scope() as session:
+        print(db.get_active_plant_type())

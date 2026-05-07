@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+
+{% block title %}로봇 관리{% endblock %}
+
+{% block content %}
+    <div>
+        <h3>우측면 카메라</h3>
+        <img src="{{ url_for('robot_side_camera') }}" class="img-fluid border" alt="실시간 모니터링">
+    </div>
+
+{% endblock %}

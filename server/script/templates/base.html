@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{% endblock %} - 스마트 팜</title>
+    {{ bootstrap.load_css() }}
+    <style>
+        #sidebar .nav-link.active {
+            background-color: #0d6efd !important;
+            color: #fff !important;
+            font-weight: bold;
+        }
+        #sidebar .nav-link:not(.active):hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="d-flex">
+        <!-- 사이드바 영역 -->
+        <nav id="sidebar" class="bg-dark vh-100 p-3" style="width: 250px;">
+            <ul class="nav flex-column mt-4">
+                <li class="nav-item">
+                    <a href="/" class="nav-link {{ 'active' if request.endpoint == 'index' else 'text-white' }}">>
+                        홈
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/plants" class="nav-link {{ 'active' if request.endpoint == 'plants' else 'text-white' }}">>
+                        작물 현황
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/robot" class="nav-link {{ 'active' if request.endpoint == 'robot' else 'text-white' }}">>
+                        로봇 관리
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/environment" class="nav-link {{ 'active' if request.endpoint == 'environment' else 'text-white' }}">>
+                        재배 환경
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="/system" class="nav-link {{ 'active' if request.endpoint == 'system' else 'text-white' }}">>
+                        시스템 통계
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <main class="container mt-4">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <!-- Bootstrap JS 로드 -->
+    {{ bootstrap.load_js() }}
+</body>
+</html>
