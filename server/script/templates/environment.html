@@ -1,7 +1,20 @@
+{% import "_logs_viewer.html" as logs_viewer %}
 {% extends 'base.html' %}
 
-{% block title %}재배 화녁ㅇ{% endblock %}
+{% block title %}재배 환경{% endblock %}
 
 {% block content %}
-    <h1 class="display-4">재배 환경</h1>
+<h1 class="display-4">재배 환경</h1>
+<div class="row">
+    <!-- 좌측(센서 현재값 + 센서 그래프) -->
+    <div class="col-md-6 mb-4">
+
+    </div>
+    <!-- 우측(센서 이력) -->
+    <div class="col-md-6 mb-4">
+
+        {% set table_name = '환경 이력' %}
+        {{ logs_viewer.render_items(table_name, history_columns, history_data, page) }}
+    </div>
+</div>
 {% endblock %}

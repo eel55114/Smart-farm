@@ -119,10 +119,19 @@ def plants():
         type_ids=type_ids, n=per_page + 1, offset=offset
     )
     has_next = len(history_records) > per_page if history_records else False
-    history_data = history_records[:per_page] if history_records else []
+    history_records = history_records[:per_page] if history_records else []
+    history_data = []
+    history_columns = ["시간", "작물 종류", "평균 성장도", "병충해 피해율"]
 
-    for h in history_data:
-        h.type_name = types.get(h.type_id, "Unknown")
+    for h in history_records:
+        temp = [
+            h.created_at.strftime('%Y-%m-%d %H:%M'),
+            types.get(h.type_id, "Unknown"),
+            f"{round(h.avg_maturity*100, 2)}%",
+            f"{round(h.disease_ratio*100, 2)}%"
+        ]
+
+        history_data.append(temp)
 
     latest_records, _ = db.get_plant_statistics(type_ids=type_ids, n=1)
     if latest_records:
@@ -203,6 +212,7 @@ def plants():
         "plants.html",
         status_data=status_data,
         history_data=history_data,
+        history_columns=history_columns,
         page=page,
         has_next=has_next,
         days=days,
