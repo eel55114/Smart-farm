@@ -339,7 +339,7 @@ class DBManager:
             end_date:datetime|None = None,
             n:int|None = None,
             offset:int|None = None
-    ) -> tuple[list[datatype.Plant], Exception | None]:
+    ) -> tuple[list[datatype.PlantStatistics], Exception | None]:
         """
         `plant_statistics`에 기록된 로그를 가져옵니다.
 

@@ -51,3 +51,13 @@ values(8, "딸기 4", 2, 0.50, 0);
 
 ---
 
+insert into sensor_type(id, type_name) values(1, "조도");
+insert into sensor_type(id, type_name) values(2, "습도");
+insert into sensor_type(id, type_name) values(3, "온도");
+insert into sensor_type(id, type_name) values(4, "화염");
+
+insert into sensor(id, type_id, value) values(1, 1, 0);
+insert into sensor(id, type_id, value) values(2, 2, 0);
+insert into sensor(id, type_id, value) values(3, 3, 0);
+insert into sensor(id, type_id, value) values(4, 4, 0);
+

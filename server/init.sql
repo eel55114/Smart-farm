@@ -57,8 +57,8 @@ create table robot_history (
     state varchar(30) not null
 );
 
-insert into farm.sensor_type(id, type_name) values(1, "illuminance");
-insert into farm.sensor_type(id, type_name) values(2, "humidity");
-insert into farm.sensor_type(id, type_name) values(3, "temperature");
+--insert into farm.sensor_type(id, type_name) values(1, "illuminance");
+--insert into farm.sensor_type(id, type_name) values(2, "humidity");
+--insert into farm.sensor_type(id, type_name) values(3, "temperature");
 
 

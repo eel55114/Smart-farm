@@ -3,27 +3,141 @@
 {% block title %}작물 현황{% endblock %}
 
 {% block content %}
-    <h1 class="display-4">작물 현황</h1>
+<h1 class="display-4 mb-4">작물 현황</h1>
 
-    <div class="scrollable-container bg-light">
-        {% for plant_type, plants in data.items() %}
-            <div class="row">
-                <div class="col-12">
-                    <h4 class="category-header">{{ plant_type }}</h4>
-                </div>
-            </div>
+<div class="row">
+    <!-- 좌측 열 (2사분면, 3사분면) -->
+    <div class="col-md-6 mb-4">
 
-            <div class="row row-cols-1 row-cols-md-4 g-1 mb-4">
-                {% for plant in plants %}
-                <div class="col">
-                    <div class="object-item">
-                        <div class="small">{{ plant.id }} <b>{{ plant.name }}</b></div>
-                        <p>성장도: <strong>{{ plant.maturity }}</strong></p>
-                        <p>병충해: <strong>{{ "❗있음" if plant.is_disease else "✅없음"}}</strong></p>
+        <!-- 2사분면: 작물 상태 -->
+        <div class="bg-light p-4 rounded shadow-sm mb-4">
+            <h4 class="mb-3 text-primary border-bottom pb-2">작물 상태</h4>
+            <div class="scrollable-container" style="max-height: 400px; overflow-y: auto; overflow-x: hidden;">
+                {% for plant_type, plants in status_data.items() %}
+                <h5 class="mt-3 mb-2 text-secondary">{{ plant_type }}</h5>
+                <div class="row row-cols-2 row-cols-md-3 g-2 mb-3 mr-10">
+                    {% for plant in plants %}
+                    <div class="col">
+                        <div
+                            class="card h-100 {% if plant.is_disease %}border-danger{% else %}border-success{% endif %}">
+                            <div class="card-body p-3">
+                                <h6 class="card-title text-dark">#{{ plant.id }} <span class="fw-bold">{{ plant.name
+                                        }}</span></h6>
+                                <div class="d-flex justify-content-between align-items-center mt-2">
+                                    <span class="small text-muted">성장도: <strong class="text-dark">{{ plant.maturity *100
+                                            }}%</strong></span>
+                                    {% if plant.is_disease %}
+                                    <span class="badge bg-danger rounded-pill">병충해</span>
+                                    {% else %}
+                                    <span class="badge bg-success rounded-pill">정상</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
                     </div>
+                    {% endfor %}
                 </div>
                 {% endfor %}
             </div>
-        {% endfor %}
+        </div>
+
+        <!-- 3사분면: 작물 그래프 -->
+        <div class="bg-light p-4 rounded shadow-sm">
+            <div class="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
+                <h4 class="mb-0 text-primary">작물 그래프</h4>
+                <div class="btn-group" role="group">
+                    <a href="{{ url_for('plants', days=10, page=page) }}"
+                        class="btn btn-sm btn-outline-primary {% if days == 10 %}active{% endif %}">10일</a>
+                    <a href="{{ url_for('plants', days=20, page=page) }}"
+                        class="btn btn-sm btn-outline-primary {% if days == 20 %}active{% endif %}">20일</a>
+                    <a href="{{ url_for('plants', days=30, page=page) }}"
+                        class="btn btn-sm btn-outline-primary {% if days == 30 %}active{% endif %}">30일</a>
+                </div>
+            </div>
+            <div style="position: relative; height:300px;">
+                <canvas id="cropChart"></canvas>
+            </div>
+        </div>
+
     </div>
+
+    <!-- 우측 열 (1, 4사분면 통합) -->
+    <div class="col-md-6 mb-4">
+
+        <!-- 1, 4사분면: 작물 이력 -->
+        <div class="bg-light p-4 rounded shadow-sm h-100 d-flex flex-column">
+            <h4 class="mb-3 text-primary border-bottom pb-2">작물 이력</h4>
+
+            <div class="table-responsive flex-grow-1">
+                <table class="table table-hover text-center align-middle">
+                    <thead class="table-primary">
+                        <tr>
+                            <th>시간</th>
+                            <th>작물종류</th>
+                            <th>평균성장도</th>
+                            <th>병충해비율</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in history_data %}
+                        <tr>
+                            <td>{{ item.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                            <td><span class="badge bg-secondary">{{ item.type_name }}</span></td>
+                            <td>{{ item.avg_maturity }}</td>
+                            <td>{{ item.disease_ratio }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" class="text-muted py-4">데이터가 없습니다.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <nav class="mt-3">
+                <ul class="pagination justify-content-center mb-0">
+                    <li class="page-item {% if page == 1 %}disabled{% endif %}">
+                        <a class="page-link" href="{{ url_for('plants', page=page-1, days=days) }}">이전</a>
+                    </li>
+                    <li class="page-item active"><span class="page-link">{{ page }}</span></li>
+                    <li class="page-item {% if not has_next %}disabled{% endif %}">
+                        <a class="page-link" href="{{ url_for('plants', page=page+1, days=days) }}">다음</a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const ctx = document.getElementById('cropChart').getContext('2d');
+        const chartData = {{ chart_data | safe
+    }};
+
+    new Chart(ctx, {
+        type: 'line',
+        data: chartData,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    title: { display: true, text: '일자 (yymmdd)' }
+                },
+                y: {
+                    beginAtZero: true
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+    });
+</script>
 {% endblock %}
