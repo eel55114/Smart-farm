@@ -6,10 +6,10 @@
 <h1 class="display-4 mb-4">작물 현황</h1>
 
 <div class="row">
-    <!-- 좌측 열 (2사분면, 3사분면) -->
+    <!-- 좌측(작물 상태+작물 그래프) -->
     <div class="col-md-6 mb-4">
 
-        <!-- 2사분면: 작물 상태 -->
+        <!-- 좌상단(작물 상태) -->
         <div class="bg-light p-4 rounded shadow-sm mb-4">
             <h4 class="mb-3 text-primary border-bottom pb-2">작물 상태</h4>
             <div class="scrollable-container" style="max-height: 400px; overflow-y: auto; overflow-x: hidden;">
@@ -41,7 +41,7 @@
             </div>
         </div>
 
-        <!-- 3사분면: 작물 그래프 -->
+        <!-- 좌하단(작물 그래프) -->
         <div class="bg-light p-4 rounded shadow-sm">
             <div class="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
                 <h4 class="mb-0 text-primary">작물 그래프</h4>
@@ -61,10 +61,10 @@
 
     </div>
 
-    <!-- 우측 열 (1, 4사분면 통합) -->
+    <!-- 우측(작물 이력)-->
     <div class="col-md-6 mb-4">
 
-        <!-- 1, 4사분면: 작물 이력 -->
+        <!-- 우상하단(작물 이력) -->
         <div class="bg-light p-4 rounded shadow-sm h-100 d-flex flex-column">
             <h4 class="mb-3 text-primary border-bottom pb-2">작물 이력</h4>
 
@@ -73,9 +73,9 @@
                     <thead class="table-primary">
                         <tr>
                             <th>시간</th>
-                            <th>작물종류</th>
-                            <th>평균성장도</th>
-                            <th>병충해비율</th>
+                            <th>작물 종류</th>
+                            <th>평균 성장도</th>
+                            <th>병충해 피해율</th>
                         </tr>
                     </thead>
                     <tbody>
