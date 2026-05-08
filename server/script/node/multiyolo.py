@@ -10,7 +10,7 @@ from .manager import DBManager
 import re
 import threading
 from queue import Queue
-
+from std_msgs.msg import String
 
 class TomatoBestFrameNode(Node):
     def __init__(self):
@@ -53,8 +53,34 @@ class TomatoBestFrameNode(Node):
             self.trigger_callback,
             10
         )
+        ## 토픽 이름의 따라 변경 필요
+        self.status_sub = self.create_subscription(
+            String,
+            '/robot_status',
+            self.status_callback,
+            10
+        )
+
+
+
 
         self.get_logger().info('Tomato Analysis Node (Accurate Mode) Ready.')
+
+    def status_callback(self, msg):
+        """/robot_status 토픽이 수신될 때마다 즉시 DB에 저장"""
+        status_str = msg.data
+
+        # 별도의 스레드에서 DB 작업을 처리하는 것이 안전하지만,
+        # 짧은 문자열 저장이므로 세션 스코프 내에서 바로 처리합니다.
+        with self.db.session_scope() as session:
+            try:
+                err = self.db.update_robot_state(status_str)
+                if err:
+                    self.get_logger().error(f"Failed to save robot status: {err}")
+                else:
+                    self.get_logger().info(f"🚀 Robot Status Recorded: {status_str}")
+            except Exception as e:
+                self.get_logger().error(f"Status DB Error: {e}")
 
     def trigger_callback(self, msg):
         """도착 신호를 받으면 분석 모드 활성화"""
@@ -163,6 +189,7 @@ class TomatoBestFrameNode(Node):
         with self.db.session_scope() as session:
             try:
                 self.db.update_plant([target_plant])
+
             except Exception as e:
                 self.get_logger().error(f"DB 저장 에러: {e}")
 
