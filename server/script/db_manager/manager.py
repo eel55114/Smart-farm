@@ -481,8 +481,9 @@ class DBManager:
 
 
 if __name__ == "__main__":
-    url = DBManager.make_url(database="farm")
-    print(url)
+    url = DBManager.make_url(database="farm", host="192.168.0.28")
     db = DBManager(url)
     with db.session_scope() as session:
         print(db.get_active_plant_type())
+        # update_plant() <- 작물 상태
+        # update_robot_state() <- 로봇 상태
