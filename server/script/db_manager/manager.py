@@ -125,6 +125,8 @@ class DBManager:
         sensor_ids: list[int],
         start_date: datetime | None = None,
         end_date: datetime | None = None,
+        n:int|None = None,
+        offset:int|None = None
     ) -> tuple[list[datatype.SensorHistory], Exception | None]:
         """
         `sensor_history`에 기록된 데이터를 가져옵니다.
@@ -134,7 +136,9 @@ class DBManager:
             sensor_ids (list[int]): 가져올 센서들의 ID
             start_date (datetime.datetime, optional): 검색 범위 시작일
             end_date (datetime.datetime, optional): 검색 범위 시작일
-
+            n (int, optional): 데이터의 최대 개수 (pagination에 사용)
+            offset (int, optional): 최신 데이터와의 오프셋 (pagination에 사용)
+            
         Returns:
             tuple[result, error]:
                 - result (list[datatype.SensorHistory])
@@ -152,6 +156,10 @@ class DBManager:
                 stmt = stmt.where(schema.SensorHistory.created_at >= start_date)
             if end_date is not None:
                 stmt = stmt.where(schema.SensorHistory.created_at <= end_date)
+            if n is not None:
+                stmt = stmt.limit(n)
+            if offset is not None:
+                stmt = stmt.offset(offset)
 
             data = session.scalars(stmt).all()
             result = []
