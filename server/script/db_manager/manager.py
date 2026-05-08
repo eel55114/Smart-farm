@@ -82,13 +82,16 @@ class DBManager:
         return None
 
     def get_current_sensors(
-        self, sensor_ids: list[int]
+        self,
+        sensor_ids: list[int],
+        all:bool = False,
     ) -> tuple[list[datatype.Sensor], Exception | None]:
         """
         `sensor` 테이블에 기록된 가장 최신의 센서 값을 가져옵니다.
 
         Args:
             sensor_ids (list[int]): 가져올 센서(들)의 ID
+            all (bool): 전체 가져오기
 
         Returns:
             tuple[result, error]:
@@ -100,17 +103,19 @@ class DBManager:
             stmt = (
                 select(schema.Sensor)
                 .options(joinedload(schema.Sensor.sensor_type))
-                .where(schema.Sensor.id.in_(sensor_ids))
             )
+            if not all:
+                stmt = stmt.where(schema.Sensor.id.in_(sensor_ids))
 
             data = session.scalars(stmt).all()
             result = []
 
             for datum in data:
                 type_name = datum.sensor_type.type_name
+                type_id = datum.sensor_type.id
 
                 temp = datatype.Sensor(
-                    sensor_id=datum.id, value=datum.value, type_name=type_name
+                    sensor_id=datum.id, value=datum.value, type_name=type_name, type_id=type_id
                 )
                 result.append(temp)
 
@@ -123,8 +128,11 @@ class DBManager:
     def get_sensor_history(
         self,
         sensor_ids: list[int],
+        all: bool = False,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
+        n:int|None = None,
+        offset:int|None = None,
     ) -> tuple[list[datatype.SensorHistory], Exception | None]:
         """
         `sensor_history`에 기록된 데이터를 가져옵니다.
@@ -132,9 +140,12 @@ class DBManager:
 
         Args:
             sensor_ids (list[int]): 가져올 센서들의 ID
+            all (bool): 모두 가져오기
             start_date (datetime.datetime, optional): 검색 범위 시작일
             end_date (datetime.datetime, optional): 검색 범위 시작일
-
+            n (int, optional): 데이터의 최대 개수 (pagination에 사용)
+            offset (int, optional): 최신 데이터와의 오프셋 (pagination에 사용)
+            
         Returns:
             tuple[result, error]:
                 - result (list[datatype.SensorHistory])
@@ -144,14 +155,26 @@ class DBManager:
         session = self.session_local()
 
         try:
-            stmt = select(schema.SensorHistory).where(
-                schema.SensorHistory.sensor_id.in_(sensor_ids)
+            stmt = (
+                select(schema.SensorHistory)
+                .options(
+                    joinedload(schema.SensorHistory.referred_sensor)
+                    .joinedload(schema.Sensor.sensor_type)
+                )
+                .order_by(schema.SensorHistory.id.desc())
             )
 
+            if not all:
+                stmt = stmt.where(schema.SensorHistory.sensor_id.in_(sensor_ids))
+    
             if start_date is not None:
                 stmt = stmt.where(schema.SensorHistory.created_at >= start_date)
             if end_date is not None:
                 stmt = stmt.where(schema.SensorHistory.created_at <= end_date)
+            if n is not None:
+                stmt = stmt.limit(n)
+            if offset is not None:
+                stmt = stmt.offset(offset)
 
             data = session.scalars(stmt).all()
             result = []
@@ -162,6 +185,8 @@ class DBManager:
                     sensor_id=datum.sensor_id,
                     created_at=datum.created_at,
                     value=datum.value,
+                    sensor_type=datum.referred_sensor.sensor_type.id,
+                    sensor_type_name=datum.referred_sensor.sensor_type.type_name,
                 )
                 result.append(temp)
 

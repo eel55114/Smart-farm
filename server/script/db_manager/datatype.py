@@ -5,7 +5,7 @@ from datetime import datetime
 @dataclass
 class Sensor:
     sensor_id: int
-    value: float | None = field(default=None)
+    value: float = field(default=None)
     # sensor_type 테이블에 정의된 TINYINT
     type_id: int = field(default=0)
     # sensor_type 테이블의 type_name. 출력 전용
@@ -19,7 +19,9 @@ class SensorHistory:
     created_at: datetime
     # 로그를 생성한 센서의 ID
     sensor_id: int
-    value: float | None
+    value: float
+    sensor_type: int
+    sensor_type_name: str
 
 
 @dataclass
