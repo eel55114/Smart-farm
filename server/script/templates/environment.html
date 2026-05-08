@@ -1,20 +1,42 @@
-{% import "_logs_viewer.html" as logs_viewer %}
 {% extends 'base.html' %}
-
+{% import "_logs_viewer.html" as logs_viewer %}
 {% block title %}재배 환경{% endblock %}
+
 
 {% block content %}
 <h1 class="display-4">재배 환경</h1>
+{% if db_error %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <strong>오류:</strong> 데이터베이스에 접속할 수 없습니다. 잠시 후에 다시 시도해 주세요.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
 <div class="row">
     <!-- 좌측(센서 현재값 + 센서 그래프) -->
     <div class="col-md-6 mb-4">
+        
+        <!-- 좌상단(센서 현재값) -->
+        <div class="bg-light p-4 rounded shadow-sm mb-4">
+            <div id="sensor-container" 
+                hx-get="/api/current_sensors" 
+                hx-trigger="load, every 5s" 
+                hx-swap="innerHTML">
+                {% include '_sensor_state.html' %}
+            </div>
+        </div>
+
+        <!-- 좌하단(센서 그래프) -->
+        <div class="bg-light p-4 rounded shadow-sm">
+            <!-- todo -->
+        </div>
+
 
     </div>
     <!-- 우측(센서 이력) -->
     <div class="col-md-6 mb-4">
 
-        {% set table_name = '환경 이력' %}
-        {{ logs_viewer.render_items(table_name, history_columns, history_data, page) }}
+        {% set table_name = '센서 이력' %}
+        {{ logs_viewer.render_items(table_name, history_columns, history_data, page, has_next, endpoint=request.endpoint) }}
     </div>
 </div>
 {% endblock %}
