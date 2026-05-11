@@ -33,7 +33,6 @@ insert into plant(id, name, type_id, maturity, is_disease)values
 (7, "딸기 3", 2, 0.50, 0),
 (8, "딸기 4", 2, 0.50, 0);
 
----
 
 insert into sensor_type(id, type_name) values
 (1, "조도"),
@@ -42,7 +41,7 @@ insert into sensor_type(id, type_name) values
 (4, "화염");
 
 insert into sensor(id, type_id, value) values
-(1, 1, 0),
-(2, 2, 0),
-(3, 3, 0),
-(4, 4, 0);
+(0, 1, 0),
+(1, 2, 0),
+(2, 3, 0),
+(3, 4, 0);

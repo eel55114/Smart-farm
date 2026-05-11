@@ -450,8 +450,8 @@ def environment():
     labels = []
     curr = start_date
     while curr.date() <= end_date.date():
-        labels.append(curr.strftime("%y%m%d"))
-        curr += timedelta(days=1)
+        labels.append(curr.strftime("%m%d %H:%M:%S"))
+        curr += timedelta(minutes=5)
 
     charts_data = {}
     if graph_records:
@@ -459,7 +459,7 @@ def environment():
         types = {}
         for r in graph_records:
             types[r.sensor_type] = r.sensor_type_name
-            
+
         for type_id, type_name in types.items():
             avg_vals = []
             max_vals = []
@@ -468,13 +468,15 @@ def environment():
             type_records = [r for r in graph_records if r.sensor_type == type_id]
             records_by_date = {}
             for r in type_records:
-                date_str = r.time_bucket.strftime("%y%m%d")
+                date_str = r.time_bucket.strftime("%m%d %H:%M:%S")
                 records_by_date.setdefault(date_str, []).append(r)
 
             for label in labels:
                 if label in records_by_date:
                     day_recs = records_by_date[label]
-                    avg_vals.append(round(sum(r.avg for r in day_recs) / len(day_recs), 2))
+                    avg_vals.append(
+                        round(sum(r.avg for r in day_recs) / len(day_recs), 2)
+                    )
                     max_vals.append(round(max(r.max for r in day_recs), 2))
                     min_vals.append(round(min(r.min for r in day_recs), 2))
                 else:
