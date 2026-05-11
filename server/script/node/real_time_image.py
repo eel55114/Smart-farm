@@ -22,7 +22,7 @@ class RobotWebBridge(Node):
 
     def set_mode(self, data: str):
         msg = String()
-        msg.data = "data"
+        msg.data = data
 
         self.robot_mode.publish(msg)
 
