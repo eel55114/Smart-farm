@@ -1,50 +1,56 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{% endblock %} - 스마트 팜</title>
     {{ bootstrap.load_css() }}
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <style>
-        #sidebar .nav-link.active {
-            background-color: #0d6efd !important;
-            color: #fff !important;
-            font-weight: bold;
-        }
-        #sidebar .nav-link:not(.active):hover {
-            background-color: rgba(255, 255, 255, 0.1);
-        }
-    </style>
     <script src="https://unpkg.com/htmx.org@2.0.9"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+        rel="stylesheet" />
 </head>
+
 <body>
     <div class="d-flex">
         <!-- 사이드바 영역 -->
-        <nav id="sidebar" class="bg-dark vh-100 p-3 sticky-top" style="width: 250px; top: 0;">
-            <ul class="nav flex-column mt-4">
-                <li class="nav-item">
-                    <a href="/" class="nav-link {{ 'active' if request.endpoint == 'index' else 'text-white' }}">>
+        <nav id="sidebar" class="bg-dark vh-100 p-3 sticky-top flex-shrink-0" style="width: 250px;">
+            <ul class="nav nav-pills flex-column mt-4">
+                <li class="nav-item mb-1">
+                    <a href="/"
+                        class="nav-link d-flex align-items-center text-white {{ 'active fw-bold' if request.endpoint == 'index' }}">
+                        <span class="material-symbols-outlined me-2">home</span>
                         홈
                     </a>
                 </li>
-                <li class="nav-item">
-                    <a href="/plants" class="nav-link {{ 'active' if request.endpoint == 'plants' else 'text-white' }}">>
+                <li class="nav-item mb-1">
+                    <a href="/plants"
+                        class="nav-link d-flex align-items-center text-white {{ 'active fw-bold' if request.endpoint == 'plants' }}">
+                        <span class="material-symbols-outlined me-2">eco</span>
                         작물 현황
                     </a>
                 </li>
-                <li class="nav-item">
-                    <a href="/robot" class="nav-link {{ 'active' if request.endpoint == 'robot' else 'text-white' }}">>
+                <li class="nav-item mb-1">
+                    <a href="/robot"
+                        class="nav-link d-flex align-items-center text-white {{ 'active fw-bold' if request.endpoint == 'robot' }}">
+                        <span class="material-symbols-outlined me-2">smart_toy</span>
                         로봇 관리
                     </a>
                 </li>
-                <li class="nav-item">
-                    <a href="/environment" class="nav-link {{ 'active' if request.endpoint == 'environment' else 'text-white' }}">>
+                <li class="nav-item mb-1">
+                    <a href="/environment"
+                        class="nav-link d-flex align-items-center text-white {{ 'active fw-bold' if request.endpoint == 'environment' }}">
+                        <span class="material-symbols-outlined me-2">sensors</span>
                         재배 환경
                     </a>
                 </li>
-                <li class="nav-item">
-                    <a href="/system" class="nav-link {{ 'active' if request.endpoint == 'system' else 'text-white' }}">>
+                <li class="nav-item mb-1">
+                    <a href="/system"
+                        class="nav-link d-flex align-items-center text-white {{ 'active fw-bold' if request.endpoint == 'system' }}">
+                        <span class="material-symbols-outlined me-2">bar_chart</span>
                         시스템 통계
                     </a>
                 </li>
@@ -59,4 +65,5 @@
     <!-- Bootstrap JS 로드 -->
     {{ bootstrap.load_js() }}
 </body>
+
 </html>

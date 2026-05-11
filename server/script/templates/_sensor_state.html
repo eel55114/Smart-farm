@@ -1,7 +1,6 @@
-
 <h4 class="mb-3 text-primary border-bottom pb-2">센서 상태</h4>
-<div class="scrollable-container" style="max-height: 400px; overflow-y: auto; overflow-x: hidden;">
-    <div class="row row-cols-2 row-cols-md-3 g-2 mb-3 mr-10">
+<div class="scrollable-container overflow-y-auto overflow-x-hidden pe-2" style="max-height: 400px;">
+    <div class="row row-cols-2 row-cols-md-3 g-2 mb-3">
         {% if db_error %}
         <div class="col">
             <div class="card h-100 ">
@@ -17,8 +16,13 @@
                 <div class="card-body p-3">
                     <h6 class="card-title text-dark">#{{ item.id }} <span class="fw-bold">{{ item.type_name
                             }}</span></h6>
-                    <img class="img-fluid" style="max-width: 30px;" src="{{ item.icon_src }}">
-                    <span class="badge {% if item.is_danger %}bg-danger{% else %}bg-success{% endif %} rounded-pill">{{ item.value }}</span>
+                    <div class="d-flex align-items-center">
+                        <span class="material-symbols-outlined me-2" style="font-variation-settings: 'FILL' 1;">{{
+                            item.icon_name }}</span>
+                        <span
+                            class="badge {% if item.is_danger %}bg-danger{% else %}bg-success{% endif %} rounded-pill">{{
+                            item.value }}</span>
+                    </div>
                 </div>
             </div>
         </div>
