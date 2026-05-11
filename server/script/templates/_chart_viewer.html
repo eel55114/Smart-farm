@@ -1,0 +1,100 @@
+{% macro render_charts(title, endpoint, days, page, charts_data) %}
+<div class="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
+    <h4 class="mb-0 text-primary">{{ title }}</h4>
+    <div class="btn-group" role="group">
+        <a href="{{ url_for(endpoint, days=5, page=page) }}"
+            class="btn btn-sm btn-outline-primary {% if days == 5 and not request.args.get('start_date') %}active{% endif %}">5일</a>
+        <a href="{{ url_for(endpoint, days=10, page=page) }}"
+            class="btn btn-sm btn-outline-primary {% if days == 10 and not request.args.get('start_date') %}active{% endif %}">10일</a>
+        <a href="{{ url_for(endpoint, days=30, page=page) }}"
+            class="btn btn-sm btn-outline-primary {% if days == 30 and not request.args.get('start_date') %}active{% endif %}">30일</a>
+
+        <div class="btn-group" role="group">
+            <button type="button"
+                class="btn btn-sm btn-outline-primary dropdown-toggle {% if request.args.get('start_date') %}active{% endif %}"
+                data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+                기간 지정
+            </button>
+            <div class="dropdown-menu dropdown-menu-end p-2 shadow-sm" style="min-width: 200px;">
+                <form action="{{ url_for(endpoint) }}" method="GET">
+                    <div class="mb-2">
+                        <label class="form-label small">시작일</label>
+                        <input type="date" name="start_date" class="form-control form-control-sm" required
+                            value="{{ request.args.get('start_date', '') }}">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small">종료일</label>
+                        <input type="date" name="end_date" class="form-control form-control-sm" required
+                            value="{{ request.args.get('end_date', '') }}">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm w-100">검색</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="scrollable-container overflow-y-auto overflow-x-hidden pe-2" style="max-height: 400px;">
+    <div id="{{ endpoint }}-chartsContainer"></div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+
+        // Initialize Charts
+        const chartsData = {{ charts_data | safe
+    }};
+    const container = document.getElementById('{{ endpoint }}-chartsContainer');
+
+    if (container) {
+        for (const [typeName, data] of Object.entries(chartsData)) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'mb-4 position-relative';
+            wrapper.style.height = '300px';
+
+            const canvas = document.createElement('canvas');
+            wrapper.appendChild(canvas);
+            container.appendChild(wrapper);
+
+            new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: data,
+                options: {
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: { display: true, text: '일자' }
+                        },
+                        y: {
+                            beginAtZero: true
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        },
+                        title: {
+                            display: true,
+                            text: typeName,
+                            align: 'start',
+                            font: {
+                                size: 16,
+                                weight: 'bold'
+                            },
+                            padding: {
+                                bottom: 15
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+    });
+</script>
+{% endmacro %}

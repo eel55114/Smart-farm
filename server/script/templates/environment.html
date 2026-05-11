@@ -1,10 +1,10 @@
 {% extends 'base.html' %}
 {% import "_logs_viewer.html" as logs_viewer %}
+{% import "_chart_viewer.html" as chart_viewer %}
 {% block title %}재배 환경{% endblock %}
 
-
 {% block content %}
-<h1 class="display-4">재배 환경</h1>
+<h1 class="display-5 mb-3">재배 환경</h1>
 {% if db_error %}
 <div class="alert alert-danger alert-dismissible fade show" role="alert">
     <strong>오류:</strong> 데이터베이스에 접속할 수 없습니다. 잠시 후에 다시 시도해 주세요.
@@ -17,7 +17,7 @@
         
         <!-- 좌상단(센서 현재값) -->
         <div class="bg-light p-4 rounded shadow-sm mb-4">
-            <div id="sensor-container" 
+            <div id="sensor-container"
                 hx-get="/api/current_sensors" 
                 hx-trigger="load, every 5s" 
                 hx-swap="innerHTML">
@@ -27,7 +27,7 @@
 
         <!-- 좌하단(센서 그래프) -->
         <div class="bg-light p-4 rounded shadow-sm">
-            <!-- todo -->
+            {{ chart_viewer.render_charts('센서 그래프', request.endpoint, days, page, charts_data) }}
         </div>
 
 

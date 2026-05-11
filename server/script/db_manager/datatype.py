@@ -14,12 +14,12 @@ class Sensor:
 
 @dataclass
 class SensorHistory:
-    # 로그 자체의 ID
-    id: int
-    created_at: datetime
     # 로그를 생성한 센서의 ID
     sensor_id: int
-    value: float
+    time_bucket: datetime
+    max: float
+    min: float
+    avg: float
     sensor_type: int
     sensor_type_name: str
 
@@ -34,6 +34,7 @@ class Plant:
     # 신규 입력시 필요
     name: str = field(default=None)
 
+
 @dataclass
 class PlantStatistics:
     type_id: int
@@ -41,6 +42,7 @@ class PlantStatistics:
     disease_ratio: float
     created_at: datetime = field(default=None)
     id: int = field(default=None)
+
 
 @dataclass
 class RobotState:
