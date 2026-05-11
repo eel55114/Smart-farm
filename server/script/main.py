@@ -1,19 +1,45 @@
 import json
 import os
+import threading
 import time
 from datetime import datetime, timedelta
 
 import cv2
 import numpy as np
+import rclpy
 from db_manager.manager import DBManager
-
-# from node import node
 from dotenv import load_dotenv
 from flask import Flask, Response, render_template, request
 from flask_bootstrap import Bootstrap5
+from node import battery_node
 
 load_dotenv()
 
+
+# class RobotController:
+#     ROBOT_ADDR = ("192.168.0.66", 9999)
+
+#     def __init__(self):
+#         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#         self.lock = Lock()
+#         self.initialized = False
+
+#     def send_with_socket(self, data: str):
+#         if not self.initialized:
+#             self.start()
+
+#         with self.lock:
+#             self.sock.sendall(data.encode("utf-8"))
+
+#     def start(self):
+#         self.sock.bind(RobotController.ROBOT_ADDR)
+#         self.initialized = True
+
+#     def close(self):
+#         self.sock.close()
+#         self.initialized = False
+
+# robot_controller = RobotController()
 
 app = Flask(__name__)
 bootstrap = Bootstrap5(app)
@@ -86,7 +112,8 @@ def index():
 def change_robot_state():
     is_manual = request.args.get("is_manual", 0, type=int)
 
-    # todo
+    data = "manual" if is_manual else "auto"
+    # robot_controller.send_with_socket(data)
 
     return "", 200
 
@@ -96,30 +123,31 @@ def control_robot():
     direction = request.args.get("direction", "stop", type=str)
 
     if direction == "home":
-        pass
+        data = "home"
     else:
         if direction == "forward":
-            pass
+            data = "f"
         elif direction == "right":
-            pass
+            data = "b"
         elif direction == "left":
-            pass
+            data = "l"
         elif direction == "backward":
-            pass
+            data = "r"
+        elif direction == "stop":
+            data = "s"
 
-    # todo
-
+    # robot_controller.send_with_socket(data)
     return "", 200
 
 
 @app.route("/api/current_robot_state")
 def current_robot_state():
-    # todo
+    battery_percent = BATTERY_MONITOR.get_battery_state()["percent"]
 
     return render_template(
         "_robot_state.html",
-        current_battery=100,
-        current_state="충전 중",
+        current_battery=battery_percent,
+        current_state="-",
     )
 
 
@@ -538,5 +566,26 @@ def system():
     return render_template("system.html")
 
 
+def run_ros_thread(node):
+    try:
+        rclpy.spin(node)
+        rclpy.spin()
+    except Exception as e:
+        print(f"ROS Spin Error: {e}")
+    finally:
+        rclpy.shutdown()
+
+
 if __name__ == "__main__":
-    app.run(port=5000, debug=True)
+    rclpy.init()
+    BATTERY_MONITOR = battery_node.BatteryMonitor()
+
+    ros_thread = threading.Thread(
+        target=run_ros_thread, args=[BATTERY_MONITOR], daemon=True
+    )
+    ros_thread.start()
+
+    try:
+        app.run(host="0.0.0.0", port=5000, debug=False)
+    except KeyboardInterrupt:
+        pass
