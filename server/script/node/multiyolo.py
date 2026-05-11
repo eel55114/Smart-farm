@@ -61,9 +61,6 @@ class TomatoBestFrameNode(Node):
             10
         )
 
-
-
-
         self.get_logger().info('Tomato Analysis Node (Accurate Mode) Ready.')
 
     def status_callback(self, msg):
