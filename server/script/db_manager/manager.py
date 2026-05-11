@@ -1,10 +1,10 @@
 from contextlib import contextmanager
 from datetime import datetime
 
-from . import datatype
-from . import schema
-from sqlalchemy import create_engine, select, func, cast, Float
-from sqlalchemy.orm import joinedload, scoped_session, sessionmaker, contains_eager
+from sqlalchemy import Float, cast, create_engine, func, select
+from sqlalchemy.orm import joinedload, scoped_session, sessionmaker
+
+from . import datatype, schema
 
 
 class DBManager:
@@ -50,7 +50,7 @@ class DBManager:
 
     def update_sensor_data(self, data: list[datatype.Sensor]) -> Exception | None:
         """
-        `sensor`와 `sensor_history` 테이블에 센서값을 업데이트합니다.
+        `sensor`와 `sensor_raw` 테이블에 센서값을 업데이트합니다.
 
         Args:
             data (list[datatype.Sensor]): 센서(들)의 정보. 필수 필드(sensor_id, value)
@@ -69,12 +69,12 @@ class DBManager:
                 else:
                     return ValueError(f"Invalid sensor id: {datum.sensor_id}")
 
-                new_history = schema.SensorHistory(
+                new_data = schema.SensorRaw(
                     sensor_id=sensor.id,
                     value=datum.value,
                 )
 
-                session.add(new_history)
+                session.add(new_data)
             session.commit()
         except Exception as e:
             session.rollback()
@@ -84,7 +84,7 @@ class DBManager:
     def get_current_sensors(
         self,
         sensor_ids: list[int],
-        all:bool = False,
+        all: bool = False,
     ) -> tuple[list[datatype.Sensor], Exception | None]:
         """
         `sensor` 테이블에 기록된 가장 최신의 센서 값을 가져옵니다.
@@ -100,10 +100,7 @@ class DBManager:
         """
         session = self.session_local()
         try:
-            stmt = (
-                select(schema.Sensor)
-                .options(joinedload(schema.Sensor.sensor_type))
-            )
+            stmt = select(schema.Sensor).options(joinedload(schema.Sensor.sensor_type))
             if not all:
                 stmt = stmt.where(schema.Sensor.id.in_(sensor_ids))
 
@@ -115,7 +112,10 @@ class DBManager:
                 type_id = datum.sensor_type.id
 
                 temp = datatype.Sensor(
-                    sensor_id=datum.id, value=datum.value, type_name=type_name, type_id=type_id
+                    sensor_id=datum.id,
+                    value=datum.value,
+                    type_name=type_name,
+                    type_id=type_id,
                 )
                 result.append(temp)
 
@@ -131,8 +131,8 @@ class DBManager:
         all: bool = False,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
-        n:int|None = None,
-        offset:int|None = None,
+        n: int | None = None,
+        offset: int | None = None,
     ) -> tuple[list[datatype.SensorHistory], Exception | None]:
         """
         `sensor_history`에 기록된 데이터를 가져옵니다.
@@ -145,7 +145,7 @@ class DBManager:
             end_date (datetime.datetime, optional): 검색 범위 시작일
             n (int, optional): 데이터의 최대 개수 (pagination에 사용)
             offset (int, optional): 최신 데이터와의 오프셋 (pagination에 사용)
-            
+
         Returns:
             tuple[result, error]:
                 - result (list[datatype.SensorHistory])
@@ -158,19 +158,20 @@ class DBManager:
             stmt = (
                 select(schema.SensorHistory)
                 .options(
-                    joinedload(schema.SensorHistory.referred_sensor)
-                    .joinedload(schema.Sensor.sensor_type)
+                    joinedload(schema.SensorHistory.referred_sensor).joinedload(
+                        schema.Sensor.sensor_type
+                    )
                 )
-                .order_by(schema.SensorHistory.id.desc())
+                .order_by(schema.SensorHistory.time_bucket.desc())
             )
 
             if not all:
                 stmt = stmt.where(schema.SensorHistory.sensor_id.in_(sensor_ids))
-    
+
             if start_date is not None:
-                stmt = stmt.where(schema.SensorHistory.created_at >= start_date)
+                stmt = stmt.where(schema.SensorHistory.time_bucket >= start_date)
             if end_date is not None:
-                stmt = stmt.where(schema.SensorHistory.created_at <= end_date)
+                stmt = stmt.where(schema.SensorHistory.time_bucket <= end_date)
             if n is not None:
                 stmt = stmt.limit(n)
             if offset is not None:
@@ -181,10 +182,11 @@ class DBManager:
 
             for datum in data:
                 temp = datatype.SensorHistory(
-                    id=datum.id,
                     sensor_id=datum.sensor_id,
-                    created_at=datum.created_at,
-                    value=datum.value,
+                    time_bucket=datum.time_bucket,
+                    max=datum.max,
+                    min=datum.min,
+                    avg=datum.avg,
                     sensor_type=datum.referred_sensor.sensor_type.id,
                     sensor_type_name=datum.referred_sensor.sensor_type.type_name,
                 )
@@ -210,9 +212,7 @@ class DBManager:
         session = self.session_local()
 
         try:
-            new_state = schema.RobotHistory(
-                state = state
-            )
+            new_state = schema.RobotHistory(state=state)
 
             session.add(new_state)
             session.commit()
@@ -223,9 +223,8 @@ class DBManager:
             return e
 
     def get_robot_history(
-            self,
-            n:int|None=None,
-            offset:int|None=None) -> tuple[list[datatype.RobotState], Exception | None]:
+        self, n: int | None = None, offset: int | None = None
+    ) -> tuple[list[datatype.RobotState], Exception | None]:
         """
         `sensor_history`에 기록된 로봇 상태를 가져옵니다.
         검색 범위 인자를 설정하지 않으면 제한 없이 조회합니다.
@@ -257,9 +256,7 @@ class DBManager:
 
             for datum in data:
                 temp = datatype.RobotState(
-                    id = datum.id,
-                    created_at = datum.created_at,
-                    state = datum.state
+                    id=datum.id, created_at=datum.created_at, state=datum.state
                 )
 
                 result.append(temp)
@@ -268,7 +265,6 @@ class DBManager:
         except Exception as e:
             session.rollback()
             return [], e
-
 
     def get_robot_state(self) -> tuple[datatype.RobotState, Exception | None]:
         """
@@ -286,7 +282,7 @@ class DBManager:
 
         return result, err
 
-    def update_plant(self, data:list[datatype.Plant]) -> Exception | None:
+    def update_plant(self, data: list[datatype.Plant]) -> Exception | None:
         """
         `plant` 테이블에 식물 정보를 업데이트합니다.
 
@@ -318,7 +314,9 @@ class DBManager:
             session.rollback()
             return e
 
-    def get_plant_state(self, ids:list[int], all:bool = False) -> tuple[list[datatype.Plant], Exception | None]:
+    def get_plant_state(
+        self, ids: list[int], all: bool = False
+    ) -> tuple[list[datatype.Plant], Exception | None]:
         """
         `plant` 테이블의 현재 상태를 가져옵니다
 
@@ -342,11 +340,11 @@ class DBManager:
             result = []
             for datum in data:
                 temp = datatype.Plant(
-                    id = datum.id,
-                    type_id = datum.type_id,
-                    name = datum.name,
-                    maturity = datum.maturity,
-                    is_disease = datum.is_disease
+                    id=datum.id,
+                    type_id=datum.type_id,
+                    name=datum.name,
+                    maturity=datum.maturity,
+                    is_disease=datum.is_disease,
                 )
 
                 result.append(temp)
@@ -358,12 +356,12 @@ class DBManager:
             return [], e
 
     def get_plant_statistics(
-            self,
-            type_ids:list[int],
-            start_date:datetime|None = None,
-            end_date:datetime|None = None,
-            n:int|None = None,
-            offset:int|None = None
+        self,
+        type_ids: list[int],
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+        n: int | None = None,
+        offset: int | None = None,
     ) -> tuple[list[datatype.PlantStatistics], Exception | None]:
         """
         `plant_statistics`에 기록된 로그를 가져옵니다.
@@ -402,13 +400,15 @@ class DBManager:
 
             result = []
             for datum in data:
-                result.append(datatype.PlantStatistics(
-                    id = datum.id,
-                    created_at = datum.created_at,
-                    type_id = datum.type_id,
-                    avg_maturity = datum.avg_maturity,
-                    disease_ratio = datum.disease_ratio
-                ))
+                result.append(
+                    datatype.PlantStatistics(
+                        id=datum.id,
+                        created_at=datum.created_at,
+                        type_id=datum.type_id,
+                        avg_maturity=datum.avg_maturity,
+                        disease_ratio=datum.disease_ratio,
+                    )
+                )
 
             return result, None
 
@@ -416,7 +416,9 @@ class DBManager:
             session.rollback()
             return [], e
 
-    def calculate_plant_statistics(self) -> tuple[list[datatype.PlantStatistics], Exception | None]:
+    def calculate_plant_statistics(
+        self,
+    ) -> tuple[list[datatype.PlantStatistics], Exception | None]:
         """
         현재 시점을 기준으로 `plant` 테이블의 정보를 작물 종류별로 취합한 스냅샷을 저장합니다.
 
@@ -431,26 +433,29 @@ class DBManager:
             stmt = select(
                 schema.Plant.type_id,
                 func.avg(schema.Plant.maturity).label("avg_maturity"),
-                func.avg(cast(schema.Plant.is_disease, Float)).label("disease_ratio")
+                func.avg(cast(schema.Plant.is_disease, Float)).label("disease_ratio"),
             ).group_by(schema.Plant.type_id)
-
 
             data = session.execute(stmt).all()
 
             result = []
             stats = []
             for datum in data:
-                result.append(datatype.PlantStatistics(
-                    type_id = datum.type_id,
-                    avg_maturity = datum.avg_maturity,
-                    disease_ratio= datum.disease_ratio
-                ))
+                result.append(
+                    datatype.PlantStatistics(
+                        type_id=datum.type_id,
+                        avg_maturity=datum.avg_maturity,
+                        disease_ratio=datum.disease_ratio,
+                    )
+                )
 
-                stats.append(schema.PlantStatistics(
-                    type_id = datum.type_id,
-                    avg_maturity = datum.avg_maturity,
-                    disease_ratio= datum.disease_ratio
-                ))
+                stats.append(
+                    schema.PlantStatistics(
+                        type_id=datum.type_id,
+                        avg_maturity=datum.avg_maturity,
+                        disease_ratio=datum.disease_ratio,
+                    )
+                )
 
             session.add_all(stats)
             session.commit()
@@ -472,9 +477,11 @@ class DBManager:
 
         session = self.session_local()
         try:
-            stmt = (select(schema.PlantType)
-                    .join(schema.PlantType.plants) # Plant 테이블과 INNER JOIN
-                    .distinct())
+            stmt = (
+                select(schema.PlantType)
+                .join(schema.PlantType.plants)  # Plant 테이블과 INNER JOIN
+                .distinct()
+            )
 
             data = session.scalars(stmt).all()
             result = dict()
@@ -485,7 +492,6 @@ class DBManager:
         except Exception as e:
             session.rollback()
             return dict(), e
-
 
     @contextmanager
     def session_scope(self):
