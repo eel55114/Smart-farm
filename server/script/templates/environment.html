@@ -19,7 +19,7 @@
         <div class="bg-light p-4 rounded shadow-sm mb-4">
             <div id="sensor-container"
                 hx-get="/api/current_sensors" 
-                hx-trigger="load, every 5s" 
+                hx-trigger="load, every 1s" 
                 hx-swap="innerHTML">
                 {% include '_sensor_state.html' %}
             </div>

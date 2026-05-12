@@ -120,11 +120,13 @@ def control_robot():
 @app.route("/api/current_robot_state")
 def current_robot_state():
     battery_percent = BATTERY_MONITOR.get_battery_state()["percent"]
+    history, err = db.get_robot_history(n=1, offset=0)
+    state = history[0].state
 
     return render_template(
         "_robot_state.html",
         current_battery=battery_percent,
-        current_state="-",
+        current_state=state,
     )
 
 
@@ -374,7 +376,7 @@ def get_current_sensors():
         elif i.type_id == 3:  # 온도
             value = f"{i.value}°C"
         elif i.type_id == 4:  # 화염
-            value = f"{'화재 발생' if i.value > 0.5 else '없음'}"
+            value = f"{'화재' if i.value > 0.5 else '없음'}"
             is_danger = i.value > 0.5
         else:
             value = "알 수 없음"
@@ -585,12 +587,12 @@ if __name__ == "__main__":
         ros_thread = threading.Thread(
             target=run_ros_thread, args=[BATTERY_MONITOR, IMAGE_RECEIVER], daemon=True
         )
-        # ros_thread.start()
+        ros_thread.start()
 
         time.sleep(1.0)
 
-        # app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=True)
-        app.run(host="0.0.0.0", port=5000, debug=True)
+        app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
+        # app.run(host="0.0.0.0", port=5000, debug=True)
     except Exception as e:
         print(f"Startup Critical Error: {e}")
     finally:
