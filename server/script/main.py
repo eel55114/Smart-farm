@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import cv2
 import numpy as np
 import rclpy
+import requests
 from db_manager.manager import DBManager
 from dotenv import load_dotenv
 from flask import Flask, Response, render_template, request
@@ -24,11 +25,6 @@ assert conn_url is not None
 db = DBManager(conn_url)
 
 
-@app.teardown_appcontext
-def shutdown_session(exception=None):
-    db.session_local.remove()
-
-
 BATTERY_MONITOR = None
 IMAGE_RECEIVER = None
 
@@ -41,6 +37,13 @@ IMGS = {
     "robot_front_camera": EMPTY_IMG_BINARY,
 }
 IMGS_LOCK = threading.Lock()
+
+HUB_ENDPOINT = "192.168.0.172"
+
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    db.session_local.remove()
 
 
 def generate_frames(img_name):
@@ -125,6 +128,20 @@ def current_robot_state():
     )
 
 
+@app.route("/api/control_actuator")
+def control_actuator():
+    device = request.args.get("device", "", type=str)
+    data = request.args.get("data", 0, type=int)
+
+    if device == "light":
+        resp = requests.get(f"{HUB_ENDPOINT}/light?on={data}")
+
+    if resp.status_code == 200:
+        return "", 200
+    else:
+        return "Hub not respond.", 400
+
+
 @app.route("/robot")
 def robot():
     connection_error = False
@@ -193,6 +210,7 @@ def plants():
     for plant in plants_data:
         type_name = types.get(plant.type_id)
         if type_name:
+            plant.maturity = max(min(round(plant.maturity * 100, 1), 100), 0)
             status_data[type_name].append(plant)
 
     page = request.args.get("page", 1, type=int)
@@ -535,11 +553,6 @@ def environment():
     )
 
 
-@app.route("/system")
-def system():
-    return render_template("system.html")
-
-
 def run_ros_thread(battery_node, image_node):
     global IMGS
 
@@ -572,11 +585,12 @@ if __name__ == "__main__":
         ros_thread = threading.Thread(
             target=run_ros_thread, args=[BATTERY_MONITOR, IMAGE_RECEIVER], daemon=True
         )
-        ros_thread.start()
+        # ros_thread.start()
 
         time.sleep(1.0)
 
-        app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
+        # app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=True)
+        app.run(host="0.0.0.0", port=5000, debug=True)
     except Exception as e:
         print(f"Startup Critical Error: {e}")
     finally:
