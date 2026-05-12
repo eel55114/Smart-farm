@@ -8,7 +8,10 @@
 int led_state = 0;
 int fire_state = 0;
 unsigned long previousMillis = 0;
+unsigned long fire_blink_prevMillis = 0;
+bool fire_led_toggle = false;
 const int main_interrupt = 2000;
+const int fire_interrupt = 200;
 
 SoftwareSerial bluetooth(2, 3);
 DHT dht(7, DHTTYPE);
@@ -28,24 +31,29 @@ void loop() {
   int photo = analogRead(A0);
   float tem = dht.readTemperature();
   float photo2 = photo / 1024.0;
-
   float hum = dht.readHumidity();
 
-  if (fire_state == 0) {
-    if (bluetooth.available()) {
-      String read_msg = bluetooth.readStringUntil('\n');
-      read_msg.trim();
+  if (bluetooth.available()) {
+    String read_msg = bluetooth.readStringUntil('\n');
+    read_msg.trim();
 
-      if (read_msg == "light_on") {
-        led_state = 1;
-        digitalWrite(6, led_state);
-      }
-
-      else if (read_msg == "light_off") {
-        led_state = 0;
-        digitalWrite(6, led_state);
-      }
+    if (read_msg == "light_on") {
+      led_state = 1;
+      digitalWrite(6, led_state);
     }
+
+    else if (read_msg == "light_off") {
+      led_state = 0;
+      digitalWrite(6, led_state);
+    }
+  }
+
+  if (fire_state == 1 ) {
+    if (currentMillis - fire_blink_prevMillis >= fire_interrupt) {
+      fire_blink_prevMillis = currentMillis;
+      fire_led_toggle = !fire_led_toggle;
+      digitalWrite(led_pin, fire_led_toggle);
+    }                        
   }
 
   if (currentMillis - previousMillis >= main_interrupt) {
@@ -55,7 +63,6 @@ void loop() {
     bluetooth.print("+");
     bluetooth.println(String(fire_state));
 
-    // 온도센서 값 블루투스 전송
     if (isnan(tem)) {
     }
 
@@ -65,8 +72,6 @@ void loop() {
       bluetooth.println(String(tem));
     }
 
-
-    //습도 센서값 블루투스 전송
     if (isnan(hum)) {
     }
 
@@ -77,23 +82,23 @@ void loop() {
     }
 
     if (isnan(photo)) {
-      }
-
-    else{
-    bluetooth.print("0");
-    bluetooth.print("+");
-    bluetooth.println(String(photo2));
     }
 
-    if (led_state == 0)
-    {
-      if (photo > 150) {
-        digitalWrite(6, 1);
-      }
+    else{
+      bluetooth.print("0");
+      bluetooth.print("+");
+      bluetooth.println(String(photo2));
+    }
 
-      else {
-        led_state = 0;
-        digitalWrite(6, 0);
+    if (fire_state == 0) {
+      if (led_state == 0)
+      {
+        if (photo > 150) {
+          digitalWrite(6, 1);
+        }
+        else {
+          digitalWrite(6, 0);
+        }
       }
     }
   }

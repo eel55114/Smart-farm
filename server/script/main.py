@@ -1,19 +1,20 @@
 import json
 import os
+import threading
 import time
 from datetime import datetime, timedelta
 
 import cv2
 import numpy as np
+import rclpy
 from db_manager.manager import DBManager
-
-# from node import node
 from dotenv import load_dotenv
 from flask import Flask, Response, render_template, request
 from flask_bootstrap import Bootstrap5
+from node import battery_node, real_time_image
+from rclpy.executors import MultiThreadedExecutor
 
 load_dotenv()
-
 
 app = Flask(__name__)
 bootstrap = Bootstrap5(app)
@@ -28,37 +29,33 @@ def shutdown_session(exception=None):
     db.session_local.remove()
 
 
-IMGS = {"robot_side_camera": None, "robot_front_camera": None}
+BATTERY_MONITOR = None
+IMAGE_RECEIVER = None
 
 img = np.zeros((480, 640, 3), dtype=np.uint8)
-success, buf = cv2.imencode(".jpg", img)
+_, buf = cv2.imencode(".jpg", img)
 EMPTY_IMG_BINARY = buf.tobytes()
 
-
-@app.route("/image_refresh", methods=["POST"])
-def image_refresh():
-    global IMGS
-    direction = request.args.get("dir")
-
-    file = request.files.get("image")
-
-    if file:
-        if direction == "side":
-            IMGS["robot_side_camera"] = file.read()
-        elif direction == "front":
-            IMGS["robot_front_camera"] = file.read()
-        return "OK", 200
-
-    return "Invalid Request", 400
+IMGS = {
+    "robot_side_camera": EMPTY_IMG_BINARY,
+    "robot_front_camera": EMPTY_IMG_BINARY,
+}
+IMGS_LOCK = threading.Lock()
 
 
 def generate_frames(img_name):
     while True:
-        frame_data = IMGS[img_name] if IMGS[img_name] is not None else EMPTY_IMG_BINARY
+        with IMGS_LOCK:
+            # None 체크 후 데이터 추출
+            frame_data = IMGS.get(img_name)
+            if frame_data is None:
+                frame_data = EMPTY_IMG_BINARY
 
+        # 표준 MJPEG 스트림 형식:
+        # --frame(바운더리) + 헤더 + 빈 줄(\r\n\r\n) + 데이터 + 바운더리 끝(\r\n)
         yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame_data + b"\r\n")
 
-        time.sleep(0.03)
+        time.sleep(0.04)  # 25FPS 수준으로 조절 (ROS 주기에 맞춤)
 
 
 @app.route("/robot_side_camera")
@@ -86,40 +83,45 @@ def index():
 def change_robot_state():
     is_manual = request.args.get("is_manual", 0, type=int)
 
-    # todo
+    data = "manual" if is_manual else "auto"
 
+    IMAGE_RECEIVER.set_mode(data)
     return "", 200
 
 
 @app.route("/api/control_robot")
 def control_robot():
     direction = request.args.get("direction", "stop", type=str)
+    print(direction)
 
-    if direction == "home":
-        pass
+    data = ""
+    if direction == "Home":
+        data = "h"
     else:
-        if direction == "forward":
-            pass
-        elif direction == "right":
-            pass
-        elif direction == "left":
-            pass
-        elif direction == "backward":
-            pass
+        if direction == "Forward":
+            data = "f"
+        elif direction == "Right":
+            data = "r"
+        elif direction == "Left":
+            data = "l"
+        elif direction == "Backward":
+            data = "b"
+        elif direction == "Stop":
+            data = "s"
 
-    # todo
+    IMAGE_RECEIVER.set_vel(data)
 
     return "", 200
 
 
 @app.route("/api/current_robot_state")
 def current_robot_state():
-    # todo
+    battery_percent = BATTERY_MONITOR.get_battery_state()["percent"]
 
     return render_template(
         "_robot_state.html",
-        current_battery=100,
-        current_state="충전 중",
+        current_battery=battery_percent,
+        current_state="-",
     )
 
 
@@ -538,5 +540,45 @@ def system():
     return render_template("system.html")
 
 
+def run_ros_thread(battery_node, image_node):
+    global IMGS
+
+    executor = MultiThreadedExecutor()
+    executor.add_node(battery_node)
+    executor.add_node(image_node)
+
+    try:
+        while rclpy.ok():
+            executor.spin_once()
+
+            latest_img = image_node.get_image()
+            if latest_img is not None:
+                with IMGS_LOCK:
+                    IMGS["robot_side_camera"] = latest_img
+
+    except Exception as e:
+        print(f"ROS Spin Error: {e}")
+    finally:
+        executor.shutdown()
+        rclpy.shutdown()
+
+
 if __name__ == "__main__":
-    app.run(port=5000, debug=True)
+    try:
+        rclpy.init()
+        BATTERY_MONITOR = battery_node.BatteryMonitor()
+        IMAGE_RECEIVER = real_time_image.RobotWebBridge()
+
+        ros_thread = threading.Thread(
+            target=run_ros_thread, args=[BATTERY_MONITOR, IMAGE_RECEIVER], daemon=True
+        )
+        ros_thread.start()
+
+        time.sleep(1.0)
+
+        app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
+    except Exception as e:
+        print(f"Startup Critical Error: {e}")
+    finally:
+        if rclpy.ok():
+            rclpy.shutdown()
