@@ -56,7 +56,7 @@ class TomatoBestFrameNode(Node):
         ## 토픽 이름의 따라 변경 필요
         self.status_sub = self.create_subscription(
             String,
-            '/robot_status',
+            'robot_state',
             self.status_callback,
             10
         )
