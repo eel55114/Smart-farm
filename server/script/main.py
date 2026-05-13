@@ -248,29 +248,31 @@ def plants():
     latest_records, err = db.get_plant_statistics(type_ids=type_ids, n=1)
     if err is not None:
         db_error = True
-
     start_date_str = request.args.get("start_date")
     end_date_str = request.args.get("end_date")
 
     parsed_custom_date = False
-    if start_date_str and end_date_str:
+
+    if start_date_str:
         try:
             start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
-            end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(
-                hour=23, minute=59, second=59
-            )
+
+            if end_date_str:
+                end_date = datetime.strptime(end_date_str, "%Y-%m-%d").replace(
+                    hour=23, minute=59, second=59
+                )
+            else:
+                end_date = datetime.now().replace(hour=23, minute=59, second=59)
+
             parsed_custom_date = True
         except ValueError:
             pass
 
     if not parsed_custom_date:
-        if latest_records:
-            end_date = latest_records[0].created_at
-        else:
-            end_date = datetime.now()
-
-        start_date = end_date - timedelta(days=days - 1)
-        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = datetime.now().replace(hour=23, minute=59, second=59)
+        start_date = (end_date - timedelta(days=days - 1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
 
     graph_records, err = db.get_plant_statistics(
         type_ids=type_ids, start_date=start_date, end_date=end_date
@@ -454,26 +456,24 @@ def environment():
             pass
 
     if not parsed_custom_date:
-        latest_records, err = db.get_sensor_history(sensor_ids=[], all=True, n=1)
-        if latest_records:
-            end_date = latest_records[0].time_bucket
-        else:
-            end_date = datetime.now()
+        # 종료일 인자가 없을 경우에만 현재 시간을 종료일로 설정
+        end_date = datetime.now()
+        start_date = (end_date - timedelta(days=days - 1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
 
-        start_date = end_date - timedelta(days=days - 1)
-        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    # 2. X축 라벨 생성
+    labels = []
+    curr = start_date
+    while curr.date() <= end_date.date():
+        labels.append(curr.strftime("%y%m%d"))
+        curr += timedelta(days=1)
 
     graph_records, err = db.get_sensor_history(
         sensor_ids=[], all=True, start_date=start_date, end_date=end_date
     )
     if err is not None:
         db_error = True
-
-    labels = []
-    curr = start_date
-    while curr.date() <= end_date.date():
-        labels.append(curr.strftime("%m%d %H:%M:%S"))
-        curr += timedelta(minutes=5)
 
     charts_data = {}
     if graph_records:

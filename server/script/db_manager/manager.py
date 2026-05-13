@@ -390,7 +390,7 @@ class DBManager:
             if start_date is not None:
                 stmt = stmt.where(schema.PlantStatistics.created_at >= start_date)
             if end_date is not None:
-                stmt = stmt.where(schema.PlantStatistics.created_at < end_date)
+                stmt = stmt.where(schema.PlantStatistics.created_at <= end_date)
             if n is not None:
                 stmt = stmt.limit(n)
             if offset is not None:
