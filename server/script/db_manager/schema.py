@@ -7,12 +7,23 @@ from sqlalchemy import (
     String,
     func,
 )
-from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
     pass
+
+
+class Region(Base):
+    __tablename__ = "region"
+    id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=False)
+    name: Mapped[str] = mapped_column("name", String(30))
+
+    plants: Mapped[List["Plant"]] = relationship(back_populates="region")
+    statistics: Mapped[List["PlantStatistics"]] = relationship(back_populates="region")
+    sensors: Mapped[List["Sensor"]] = relationship(back_populates="region")
+    devices: Mapped[List["Device"]] = relationship(back_populates="region")
+    robots: Mapped[List["Robot"]] = relationship(back_populates="region")
 
 
 class PlantType(Base):
@@ -31,10 +42,12 @@ class Plant(Base):
     id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=False)
     name: Mapped[str] = mapped_column("name", String(30))
     type_id: Mapped[int] = mapped_column("type_id", ForeignKey("plant_type.id"))
+    region_id: Mapped[int] = mapped_column("region_id", ForeignKey("region.id"))
     maturity: Mapped[float] = mapped_column("maturity")
     is_disease: Mapped[bool] = mapped_column("is_disease")
 
     plant_type: Mapped["PlantType"] = relationship(back_populates="plants")
+    region: Mapped["Region"] = relationship(back_populates="plants")
 
 
 class PlantStatistics(Base):
@@ -44,17 +57,17 @@ class PlantStatistics(Base):
         "created_at", DateTime, server_default=func.now()
     )
     type_id: Mapped[int] = mapped_column(ForeignKey("plant_type.id"))
+    region_id: Mapped[int] = mapped_column("region_id", ForeignKey("region.id"))
     avg_maturity: Mapped[float] = mapped_column("avg_maturity")
     disease_ratio: Mapped[float] = mapped_column("disease_ratio")
 
     plant_type: Mapped["PlantType"] = relationship(back_populates="histories")
+    region: Mapped["Region"] = relationship(back_populates="statistics")
 
 
 class SensorType(Base):
     __tablename__ = "sensor_type"
-    id: Mapped[int] = mapped_column(
-        "id", mysql.TINYINT, primary_key=True, autoincrement=False
-    )
+    id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=False)
     type_name: Mapped[str] = mapped_column("type_name", String(20))
 
     sensors: Mapped[List["Sensor"]] = relationship(
@@ -65,17 +78,18 @@ class SensorType(Base):
 class Sensor(Base):
     __tablename__ = "sensor"
     id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=False)
-    type_id: Mapped[int] = mapped_column(
-        "type_id", mysql.TINYINT, ForeignKey("sensor_type.id")
-    )
+    type_id: Mapped[int] = mapped_column("type_id", ForeignKey("sensor_type.id"))
+    region_id: Mapped[int] = mapped_column("region_id", ForeignKey("region.id"))
     value: Mapped[float] = mapped_column("value")
-    sensor_type: Mapped[SensorType] = relationship(back_populates="sensors")
+
     raw_data: Mapped[List["SensorRaw"]] = relationship(
-        back_populates="referred_sensor", cascade="all, delete-orphan"
+        back_populates="sensor", cascade="all, delete-orphan"
     )
     bucket_data: Mapped[List["SensorHistory"]] = relationship(
-        back_populates="referred_sensor", cascade="all, delete-orphan"
+        back_populates="sensor", cascade="all, delete-orphan"
     )
+    sensor_type: Mapped[SensorType] = relationship(back_populates="sensors")
+    region: Mapped["Region"] = relationship(back_populates="sensors")
 
 
 class SensorRaw(Base):
@@ -87,7 +101,7 @@ class SensorRaw(Base):
     sensor_id: Mapped[int] = mapped_column("sensor_id", ForeignKey("sensor.id"))
     value: Mapped[float] = mapped_column("value")
 
-    referred_sensor: Mapped[Sensor] = relationship(back_populates="raw_data")
+    sensor: Mapped[Sensor] = relationship(back_populates="raw_data")
 
 
 class SensorHistory(Base):
@@ -96,11 +110,42 @@ class SensorHistory(Base):
     sensor_id: Mapped[int] = mapped_column(
         "sensor_id", ForeignKey("sensor.id"), primary_key=True
     )
-    max: Mapped[float] = mapped_column("max")
-    min: Mapped[float] = mapped_column("min")
-    avg: Mapped[float] = mapped_column("avg")
+    max_val: Mapped[float] = mapped_column("max_val")
+    min_val: Mapped[float] = mapped_column("min_val")
+    avg_val: Mapped[float] = mapped_column("avg_val")
 
-    referred_sensor: Mapped[Sensor] = relationship(back_populates="bucket_data")
+    sensor: Mapped[Sensor] = relationship(back_populates="bucket_data")
+
+
+class DeviceType(Base):
+    __tablename__ = "device_type"
+    id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=False)
+    type_name: Mapped[str] = mapped_column("type_name", String(20))
+
+    devices: Mapped[List["Device"]] = relationship(
+        back_populates="device_type", cascade="all, delete-orphan"
+    )
+
+
+class Device(Base):
+    __tablename__ = "device"
+    id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=False)
+    type_id: Mapped[int] = mapped_column("type_id", ForeignKey("device_type.id"))
+    region_id: Mapped[int] = mapped_column("region_id", ForeignKey("region.id"))
+    state: Mapped[str] = mapped_column("state", String(30))
+
+    device_type: Mapped[SensorType] = relationship(back_populates="devices")
+    region: Mapped["Region"] = relationship(back_populates="sensors")
+
+
+class Robot(Base):
+    __tablename__ = "robot"
+    id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=False)
+    region_id: Mapped[int] = mapped_column("region_id", ForeignKey("region.id"))
+    name: Mapped[str] = mapped_column("name", String(30))
+
+    region: Mapped["Region"] = relationship(back_populates="robots")
+    histories: Mapped[List["RobotHistory"]] = relationship(back_populates="robot")
 
 
 class RobotHistory(Base):
@@ -109,4 +154,7 @@ class RobotHistory(Base):
     created_at: Mapped[datetime] = mapped_column(
         "created_at", DateTime, server_default=func.now()
     )
+    robot_id: Mapped[int] = mapped_column("robot_id", ForeignKey("robot.id"))
     state: Mapped[str] = mapped_column("state", String(30))
+
+    robot: Mapped["Robot"] = relationship(back_populates="histories")
