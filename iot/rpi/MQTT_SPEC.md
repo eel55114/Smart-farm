@@ -1,4 +1,5 @@
-# 1. 토픽 접두어
+# 1. 공통
+### 1-1. 토픽 접투어
 - 공통: `smartfarm/{region_id}//`
 - IoT 장비: `.../iot/`
 - Turtlebot: `.../robot/`
@@ -6,8 +7,10 @@
 - 메시지 발신: `.../.../telemetry`
 - 메시지 수신: `.../.../command`
 
+
 # 2. IoT
 ### 2-1. 센서 데이터 발신
+IoT 허브 -> 서버
 - 토픽명: `smartfarm/{region_id}/iot/telemetry/sensor/{sensor_id}`
 - 페이로드: json string {
     "time": (int) timestamp,
@@ -15,19 +18,23 @@
 }
 
 ### 2-2. 액추에이터 조작
-- 토픽명: `smartfarm/{region_id}/iot/command/actuator/`
+서버 -> IoT 허브
+- 토픽명: `smartfarm/{region_id}/iot/command/device/{device_id}`
 - 페이로드: json string {
-    "device_id": (int) device id,
     "on": bool,
-    
+}
+### 2-3. 장치 상태
+IoT 허브 -> 서버
+- 토픽명: `smartfarm/{region_id}/iot/telemetry/device/{device_id}`
+- 페이로드: json string {
+    "state": bool,
 }
 
 ### 2-3. 연결 종료/회복
-- 토픽명: `smartfarm/{region_id}/iot/telemetry/broken/`
-- 토픽명: `smartfarm/{region_id}/iot/telemetry/recover/`
+- 토픽명: `smartfarm/{region_id}/iot/telemetry/broken/{device_id}`
+- 토픽명: `smartfarm/{region_id}/iot/telemetry/recover/{device_id}`
 - 페이로드: json string {
     "time": (int) timestamp,
-    "device_id": (int) device id,
 }
 
 # 3. 로봇
