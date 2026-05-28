@@ -58,7 +58,7 @@ class PlantStatistics:
 
 
 @dataclass
-class Device:
+class Actuator:
     id: int
     state: str
     # 신규 입력시에만 필요

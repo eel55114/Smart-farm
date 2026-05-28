@@ -85,19 +85,19 @@ CREATE TABLE sensor_history(
 );
 
 -- IoT 장비 유형
-CREATE TABLE device_type(
+CREATE TABLE actuator_type(
 	id INT PRIMARY KEY,                     -- 장비 유형 ID
     type_name VARCHAR(20) NOT NULL UNIQUE   -- 장비 유형 이름(예. 허브, 환풍기, 조명)
 );
 
 -- 개별 IoT 장비 현황
-CREATE TABLE device(
+CREATE TABLE actuator(
 	id INT PRIMARY KEY,         -- 개별 장비 ID
     type_id INT NOT NULL,       -- 장비 유형 ID
     region_id INT NOT NULL,       -- 재배지 ID
     state VARCHAR(30) NOT NULL, -- 장비 상태
 
-    FOREIGN KEY (type_id) REFERENCES device_type(id),
+    FOREIGN KEY (type_id) REFERENCES actuator_type(id),
     FOREIGN KEY (region_id) REFERENCES region(id)
 );
 

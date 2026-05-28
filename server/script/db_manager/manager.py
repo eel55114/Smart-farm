@@ -244,7 +244,7 @@ class DBManager:
 
         Args:
             ids (list[int]): 조회할 로봇의 ID 목록
-            all (bool): 전체 조회
+            all (bool): ID 인자를 무시하고 전체 조회
             n (int, optional): 검색 개수
             offset (int, optional): 최신 기록으로부터 떨어진 거리
 
@@ -518,21 +518,21 @@ class DBManager:
             session.rollback()
             return dict(), e
 
-    def update_device(self, devices: list[datatype.Device]) -> Exception | None:
+    def update_actuator(self, actuators: list[datatype.Actuator]) -> Exception | None:
 
         session = self.session_local()
 
         try:
-            for datum in devices:
-                device = session.get(schema.Device, datum.id)
-                if device is None:
-                    return ValueError(f"There's no device has ID '{id}'")
+            for datum in actuators:
+                actuator = session.get(schema.Actuator, datum.id)
+                if actuator is None:
+                    return ValueError(f"There's no actuator has ID '{id}'")
 
-                device.state = datum.state
+                actuator.state = datum.state
                 if datum.type_id is not None:
-                    device.type_id = datum.type_id
+                    actuator.type_id = datum.type_id
                 if datum.region_id is not None:
-                    device.region_id = datum.region_id
+                    actuator.region_id = datum.region_id
 
             session.commit()
 
@@ -542,32 +542,32 @@ class DBManager:
             session.rollback()
             return e
 
-    def get_device(
+    def get_actuator(
         self, ids: list[int]
-    ) -> tuple[list[datatype.Device], Exception | None]:
+    ) -> tuple[list[datatype.Actuator], Exception | None]:
 
         session = self.session_local()
 
         try:
             stmt = (
-                select(schema.Device)
-                .where(schema.Device.id.in_(ids))
+                select(schema.Actuator)
+                .where(schema.Actuator.id.in_(ids))
                 .options(
-                    joinedload(schema.Device.region),
-                    joinedload(schema.Device.device_type),
+                    joinedload(schema.Actuator.region),
+                    joinedload(schema.Actuator.actuator_type),
                 )
             )
 
             data = session.scalars(stmt).all()
-            result: list[datatype.Device] = []
+            result: list[datatype.Actuator] = []
 
             for datum in data:
-                temp = datatype.Device(
+                temp = datatype.Actuator(
                     id=datum.id,
                     state=datum.state,
                     type_id=datum.type_id,
                     region_id=datum.region_id,
-                    type_name=datum.device_type.type_name,
+                    type_name=datum.actuator_type.type_name,
                     region_name=datum.region.name,
                 )
 

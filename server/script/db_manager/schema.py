@@ -22,7 +22,7 @@ class Region(Base):
     plants: Mapped[List["Plant"]] = relationship(back_populates="region")
     statistics: Mapped[List["PlantStatistics"]] = relationship(back_populates="region")
     sensors: Mapped[List["Sensor"]] = relationship(back_populates="region")
-    devices: Mapped[List["Device"]] = relationship(back_populates="region")
+    actuators: Mapped[List["Actuator"]] = relationship(back_populates="region")
     robots: Mapped[List["Robot"]] = relationship(back_populates="region")
 
 
@@ -117,24 +117,24 @@ class SensorHistory(Base):
     sensor: Mapped[Sensor] = relationship(back_populates="bucket_data")
 
 
-class DeviceType(Base):
-    __tablename__ = "device_type"
+class ActuatorType(Base):
+    __tablename__ = "actuator_type"
     id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=False)
     type_name: Mapped[str] = mapped_column("type_name", String(20))
 
-    devices: Mapped[List["Device"]] = relationship(
-        back_populates="device_type", cascade="all, delete-orphan"
+    actuators: Mapped[List["Actuator"]] = relationship(
+        back_populates="actuator_type", cascade="all, delete-orphan"
     )
 
 
-class Device(Base):
-    __tablename__ = "device"
+class Actuator(Base):
+    __tablename__ = "actuator"
     id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=False)
-    type_id: Mapped[int] = mapped_column("type_id", ForeignKey("device_type.id"))
+    type_id: Mapped[int] = mapped_column("type_id", ForeignKey("actuator_type.id"))
     region_id: Mapped[int] = mapped_column("region_id", ForeignKey("region.id"))
     state: Mapped[str] = mapped_column("state", String(30))
 
-    device_type: Mapped[DeviceType] = relationship(back_populates="devices")
+    actuator_type: Mapped[ActuatorType] = relationship(back_populates="actuators")
     region: Mapped["Region"] = relationship(back_populates="sensors")
 
 
