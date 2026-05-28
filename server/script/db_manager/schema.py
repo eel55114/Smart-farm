@@ -134,7 +134,7 @@ class Device(Base):
     region_id: Mapped[int] = mapped_column("region_id", ForeignKey("region.id"))
     state: Mapped[str] = mapped_column("state", String(30))
 
-    device_type: Mapped[SensorType] = relationship(back_populates="devices")
+    device_type: Mapped[DeviceType] = relationship(back_populates="devices")
     region: Mapped["Region"] = relationship(back_populates="sensors")
 
 

@@ -30,15 +30,16 @@ class DBManager:
         session = self.session_local()
         try:
             for datum in data:
-                sensor = session.get(schema.Sensor, datum.sensor_id)
+                sensor = session.get(schema.Sensor, datum.id)
 
                 if sensor is not None:
-                    return ValueError(f"Sensor already exists: {datum.sensor_id}")
+                    return ValueError(f"Sensor already exists: {datum.id}")
 
                 new_sensor = schema.Sensor(
-                    id=datum.sensor_id,
+                    id=datum.id,
                     type_id=datum.type_id,
                     value=datum.value,
+                    region_id=datum.region_id,
                 )
 
                 session.add(new_sensor)
@@ -62,12 +63,12 @@ class DBManager:
         session = self.session_local()
         try:
             for datum in data:
-                sensor = session.get(schema.Sensor, datum.sensor_id)
+                sensor = session.get(schema.Sensor, datum.id)
 
                 if sensor:
                     sensor.value = datum.value
                 else:
-                    return ValueError(f"Invalid sensor id: {datum.sensor_id}")
+                    return ValueError(f"Invalid sensor id: {datum.id}")
 
                 new_data = schema.SensorRaw(
                     sensor_id=sensor.id,
@@ -100,7 +101,10 @@ class DBManager:
         """
         session = self.session_local()
         try:
-            stmt = select(schema.Sensor).options(joinedload(schema.Sensor.sensor_type))
+            stmt = select(schema.Sensor).options(
+                joinedload(schema.Sensor.sensor_type),
+                joinedload(schema.Sensor.region),
+            )
             if not all:
                 stmt = stmt.where(schema.Sensor.id.in_(sensor_ids))
 
@@ -108,14 +112,13 @@ class DBManager:
             result = []
 
             for datum in data:
-                type_name = datum.sensor_type.type_name
-                type_id = datum.sensor_type.id
-
                 temp = datatype.Sensor(
-                    sensor_id=datum.id,
+                    id=datum.id,
                     value=datum.value,
-                    type_name=type_name,
-                    type_id=type_id,
+                    type_name=datum.sensor_type.type_name,
+                    type_id=datum.sensor_type.id,
+                    region_id=datum.region.id,
+                    region_name=datum.region.name,
                 )
                 result.append(temp)
 
@@ -158,7 +161,7 @@ class DBManager:
             stmt = (
                 select(schema.SensorHistory)
                 .options(
-                    joinedload(schema.SensorHistory.referred_sensor).joinedload(
+                    joinedload(schema.SensorHistory.sensor).joinedload(
                         schema.Sensor.sensor_type
                     )
                 )
@@ -184,11 +187,11 @@ class DBManager:
                 temp = datatype.SensorHistory(
                     sensor_id=datum.sensor_id,
                     time_bucket=datum.time_bucket,
-                    max=datum.max,
-                    min=datum.min,
-                    avg=datum.avg,
-                    sensor_type=datum.referred_sensor.sensor_type.id,
-                    sensor_type_name=datum.referred_sensor.sensor_type.type_name,
+                    max=datum.max_val,
+                    min=datum.min_val,
+                    avg=datum.avg_val,
+                    sensor_type=datum.sensor.sensor_type.id,
+                    sensor_type_name=datum.sensor.sensor_type.type_name,
                 )
                 result.append(temp)
 
@@ -198,12 +201,13 @@ class DBManager:
             session.rollback()
             return [], e
 
-    def update_robot_state(self, state: str) -> Exception | None:
+    def update_robot_state(self, robot_id: int, state: str) -> Exception | None:
         """
         `robot_history` 테이블에 로봇 상태를 추가합니다.
 
         Args:
-            state (str): 로봇의 현재 상태 문자열
+            robot_id (int): 업데이트할 로봇의 ID
+            state (str): 상태 문자열
 
         Returns:
             Exception | None: 발생한 에러
@@ -212,7 +216,12 @@ class DBManager:
         session = self.session_local()
 
         try:
-            new_state = schema.RobotHistory(state=state)
+            robot = session.get(schema.Robot, robot_id)
+
+            if robot is None:
+                return ValueError(f"There's no robot with ID '{robot_id}'.")
+
+            new_state = schema.RobotHistory(robot_id=robot_id, state=state)
 
             session.add(new_state)
             session.commit()
@@ -223,13 +232,19 @@ class DBManager:
             return e
 
     def get_robot_history(
-        self, n: int | None = None, offset: int | None = None
+        self,
+        ids: list[int],
+        all: bool = False,
+        n: int | None = None,
+        offset: int | None = None,
     ) -> tuple[list[datatype.RobotState], Exception | None]:
         """
         `sensor_history`에 기록된 로봇 상태를 가져옵니다.
         검색 범위 인자를 설정하지 않으면 제한 없이 조회합니다.
 
         Args:
+            ids (list[int]): 조회할 로봇의 ID 목록
+            all (bool): 전체 조회
             n (int, optional): 검색 개수
             offset (int, optional): 최신 기록으로부터 떨어진 거리
 
@@ -245,6 +260,8 @@ class DBManager:
         try:
             stmt = select(schema.RobotHistory).order_by(schema.RobotHistory.id.desc())
 
+            if not all:
+                stmt = stmt.where(schema.Robot.id.in_(ids))
             if offset is not None:
                 stmt = stmt.offset(offset)
             if n is not None:
@@ -256,7 +273,10 @@ class DBManager:
 
             for datum in data:
                 temp = datatype.RobotState(
-                    id=datum.id, created_at=datum.created_at, state=datum.state
+                    id=datum.id,
+                    created_at=datum.created_at,
+                    robot_id=datum.robot_id,
+                    state=datum.state,
                 )
 
                 result.append(temp)
@@ -266,16 +286,21 @@ class DBManager:
             session.rollback()
             return [], e
 
-    def get_robot_state(self) -> tuple[datatype.RobotState, Exception | None]:
+    def get_robot_state(
+        self, robot_id: int
+    ) -> tuple[datatype.RobotState, Exception | None]:
         """
         `sensor_history`에 기록된 로봇의 현재 상태(최신 기록 1개)를 가져옵니다.
 
+        Args:
+            robot_id (int): 조회할 로봇 ID
+
         Returns:
             tuple[result, error]:
-                - result (datatype.RobotState)
+                - result (list[datatype.RobotState])
                 - error (Exception | None): 발생한 에러
         """
-        result, err = self.get_robot_history(n=1)
+        result, err = self.get_robot_history(ids=[robot_id], n=1)
 
         if result is not None:
             result = result[0]
@@ -492,6 +517,66 @@ class DBManager:
         except Exception as e:
             session.rollback()
             return dict(), e
+
+    def update_device(self, devices: list[datatype.Device]) -> Exception | None:
+
+        session = self.session_local()
+
+        try:
+            for datum in devices:
+                device = session.get(schema.Device, datum.id)
+                if device is None:
+                    return ValueError(f"There's no device has ID '{id}'")
+
+                device.state = datum.state
+                if datum.type_id is not None:
+                    device.type_id = datum.type_id
+                if datum.region_id is not None:
+                    device.region_id = datum.region_id
+
+            session.commit()
+
+            return None
+
+        except Exception as e:
+            session.rollback()
+            return e
+
+    def get_device(
+        self, ids: list[int]
+    ) -> tuple[list[datatype.Device], Exception | None]:
+
+        session = self.session_local()
+
+        try:
+            stmt = (
+                select(schema.Device)
+                .where(schema.Device.id.in_(ids))
+                .options(
+                    joinedload(schema.Device.region),
+                    joinedload(schema.Device.device_type),
+                )
+            )
+
+            data = session.scalars(stmt).all()
+            result: list[datatype.Device] = []
+
+            for datum in data:
+                temp = datatype.Device(
+                    id=datum.id,
+                    state=datum.state,
+                    type_id=datum.type_id,
+                    region_id=datum.region_id,
+                    type_name=datum.device_type.type_name,
+                    region_name=datum.region.name,
+                )
+
+                result.append(temp)
+
+            return result, None
+        except Exception as e:
+            session.rollback()
+            return [], e
 
     @contextmanager
     def session_scope(self):
