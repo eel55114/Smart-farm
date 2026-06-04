@@ -52,10 +52,11 @@ CREATE TABLE sensor_type(
 
 -- 개별 센서 최신값
 CREATE TABLE sensor(
-	id INT PRIMARY KEY,         -- 개별 센서 ID
-    type_id INT NOT NULL,       -- 센서 유형 ID
-    region_id INT NOT NULL,       -- 재배지 ID
-    value FLOAT NOT NULL,       -- 센서값
+	id INT PRIMARY KEY,             -- 개별 센서 ID
+    type_id INT NOT NULL,           -- 센서 유형 ID
+    region_id INT NOT NULL,         -- 재배지 ID
+    value FLOAT NOT NULL,           -- 센서값
+    last_signal TIMESTAMP NOT NULL, -- 마지막 신호 연결
 
     FOREIGN KEY (type_id) REFERENCES sensor_type(id),
     FOREIGN KEY (region_id) REFERENCES region(id)
@@ -92,10 +93,11 @@ CREATE TABLE actuator_type(
 
 -- 개별 IoT 장비 현황
 CREATE TABLE actuator(
-	id INT PRIMARY KEY,         -- 개별 장비 ID
-    type_id INT NOT NULL,       -- 장비 유형 ID
-    region_id INT NOT NULL,       -- 재배지 ID
-    state VARCHAR(30) NOT NULL, -- 장비 상태
+	id INT PRIMARY KEY,             -- 개별 장비 ID
+    type_id INT NOT NULL,           -- 장비 유형 ID
+    region_id INT NOT NULL,         -- 재배지 ID
+    state VARCHAR(30) NOT NULL,     -- 장비 상태
+    last_signal TIMESTAMP NOT NULL, -- 마지막 신호 연결
 
     FOREIGN KEY (type_id) REFERENCES actuator_type(id),
     FOREIGN KEY (region_id) REFERENCES region(id)
@@ -103,9 +105,11 @@ CREATE TABLE actuator(
 
 -- 작물 로봇
 CREATE TABLE robot(
-    id INT PRIMARY KEY,         -- 로봇 ID
-    region_id INT NOT NULL,       -- 재배지 ID
-    name VARCHAR(30) NOT NULL,  -- 로봇 이름
+    id INT PRIMARY KEY,             -- 로봇 ID
+    region_id INT NOT NULL,         -- 재배지 ID
+    name VARCHAR(30) NOT NULL,      -- 로봇 이름
+    state VARCHAR(50) NOT NULL,     -- 로봇 상태
+    last_signal TIMESTAMP NOT NULL, -- 마지막 신호 연결
 
     FOREIGN KEY (region_id) REFERENCES region(id)
 );
@@ -115,7 +119,7 @@ CREATE TABLE robot_history (
 	id INT PRIMARY KEY AUTO_INCREMENT,                          -- 이력 ID
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,    -- 이력 생성 시간
     robot_id INT NOT NULL,                                      -- 로봇 ID
-    state VARCHAR(40) NOT NULL,                                 -- 로봇 상태
+    state VARCHAR(50) NOT NULL,                                 -- 로봇 상태
 
     FOREIGN KEY (robot_id) REFERENCES robot(id)
 );

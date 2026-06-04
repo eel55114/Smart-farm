@@ -1,19 +1,15 @@
 import json
 import os
-import threading
 import time
 from datetime import datetime, timedelta
 
 import cv2
 import numpy as np
 import rclpy
-import requests
 from db_manager.manager import DBManager
 from dotenv import load_dotenv
 from flask import Flask, Response, render_template, request
 from flask_bootstrap import Bootstrap5
-from node import battery_node, real_time_image
-from rclpy.executors import MultiThreadedExecutor
 
 load_dotenv()
 
@@ -25,20 +21,9 @@ assert conn_url is not None
 db = DBManager(conn_url)
 
 
-BATTERY_MONITOR = None
-IMAGE_RECEIVER = None
-
 img = np.zeros((480, 640, 3), dtype=np.uint8)
 _, buf = cv2.imencode(".jpg", img)
 EMPTY_IMG_BINARY = buf.tobytes()
-
-IMGS = {
-    "robot_side_camera": EMPTY_IMG_BINARY,
-    "robot_front_camera": EMPTY_IMG_BINARY,
-}
-IMGS_LOCK = threading.Lock()
-
-HUB_ENDPOINT = "192.168.0.172"
 
 
 @app.teardown_appcontext
@@ -48,17 +33,13 @@ def shutdown_session(exception=None):
 
 def generate_frames(img_name):
     while True:
-        with IMGS_LOCK:
-            # None 체크 후 데이터 추출
-            frame_data = IMGS.get(img_name)
-            if frame_data is None:
-                frame_data = EMPTY_IMG_BINARY
+        # yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame_data + b"\r\n")
+        pass  # todo
+        yield (
+            b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + EMPTY_IMG_BINARY + b"\r\n"
+        )
 
-        # 표준 MJPEG 스트림 형식:
-        # --frame(바운더리) + 헤더 + 빈 줄(\r\n\r\n) + 데이터 + 바운더리 끝(\r\n)
-        yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame_data + b"\r\n")
-
-        time.sleep(0.04)  # 25FPS 수준으로 조절 (ROS 주기에 맞춤)
+        time.sleep(0.04)
 
 
 @app.route("/robot_side_camera")
@@ -84,11 +65,8 @@ def index():
 
 @app.route("/api/change_robot_state")
 def change_robot_state():
-    is_manual = request.args.get("is_manual", 0, type=int)
-
-    data = "manual" if is_manual else "auto"
-
-    IMAGE_RECEIVER.set_mode(data)
+    pass
+    # todo
     return "", 200
 
 
@@ -112,16 +90,21 @@ def control_robot():
         elif direction == "Stop":
             data = "s"
 
-    IMAGE_RECEIVER.set_vel(data)
+    pass
+    # todo
 
     return "", 200
 
 
 @app.route("/api/current_robot_state")
 def current_robot_state():
-    battery_percent = BATTERY_MONITOR.get_battery_state()["percent"]
-    history, err = db.get_robot_history(n=1, offset=0)
-    state = history[0].state
+    # battery_percent = BATTERY_MONITOR.get_battery_state()["percent"]
+    # history, err = db.get_robot_history(n=1, offset=0)
+    # state = history[0].state
+
+    battery_percent = 100
+    state = ""
+    pass  # todo
 
     return render_template(
         "_robot_state.html",
@@ -135,13 +118,15 @@ def control_actuator():
     device = request.args.get("device", "", type=str)
     data = request.args.get("data", 0, type=int)
 
-    if device == "light":
-        resp = requests.get(f"{HUB_ENDPOINT}/light?on={data}")
+    # if device == "light":
+    #     resp = requests.get(f"{HUB_ENDPOINT}/light?on={data}")
 
-    if resp.status_code == 200:
-        return "", 200
-    else:
-        return "Hub not respond.", 400
+    # if resp.status_code == 200:
+    #     return "", 200
+    # else:
+    #     return "Hub not respond.", 400
+    pass  # todo
+    return "", 200
 
 
 @app.route("/robot")
@@ -158,9 +143,11 @@ def robot():
     per_page = 15
     offset = (page - 1) * per_page
 
-    robot_histories, err = db.get_robot_history(n=per_page, offset=offset)
+    robot_histories, count, err = db.get_robot_history(n=per_page, offset=offset)
     if err is not None:
         db_error = True
+    else:
+        has_next = (offset + per_page) < count
 
     table_name = "로봇 상태 이력"
     history_columns = ["이력 ID", "일시", "상태"]
@@ -199,7 +186,7 @@ def plants():
         types = dict()
 
     # 현재 작물 정보 쿼리
-    plants_data, err = db.get_plant_state(ids=[], all=True)
+    plants_data, err = db.get_current_plant()
     if err is not None:
         db_error = True
         plants_data = []
@@ -223,14 +210,15 @@ def plants():
     per_page = 15
     offset = (page - 1) * per_page
 
-    history_records, err = db.get_plant_statistics(
-        type_ids=type_ids, n=per_page + 1, offset=offset
+    history_records, count, err = db.get_plant_statistics(
+        type_ids=type_ids, n=per_page, offset=offset
     )
     if err is not None:
         db_error = True
+        history_records = []
+        count = 0
 
-    has_next = len(history_records) > per_page if history_records else False
-    history_records = history_records[:per_page] if history_records else []
+    has_next = (offset + per_page) < count
     history_data = []
     history_columns = ["이력 ID", "일시", "작물 종류", "평균 성장도", "병충해 피해율"]
 
@@ -245,7 +233,7 @@ def plants():
 
         history_data.append(temp)
 
-    latest_records, err = db.get_plant_statistics(type_ids=type_ids, n=1)
+    latest_records, _, err = db.get_plant_statistics(type_ids=type_ids, n=1)
     if err is not None:
         db_error = True
     start_date_str = request.args.get("start_date")
@@ -274,7 +262,7 @@ def plants():
             hour=0, minute=0, second=0, microsecond=0
         )
 
-    graph_records, err = db.get_plant_statistics(
+    graph_records, _, err = db.get_plant_statistics(
         type_ids=type_ids, start_date=start_date, end_date=end_date
     )
     if err is not None:
@@ -364,7 +352,7 @@ def get_current_sensors():
     }
 
     db_error = False
-    sensors, err = db.get_current_sensors([], all=True)
+    sensors, err = db.get_current_sensor()
     if err is not None:
         db_error = True
 
@@ -384,7 +372,7 @@ def get_current_sensors():
             value = "알 수 없음"
 
         temp = {
-            "id": i.sensor_id,
+            "id": i.id,
             "type_name": i.type_name,
             "icon_name": SENSORS[i.type_id],
             "value": value,
@@ -411,15 +399,16 @@ def environment():
     per_page = 15
     offset = (page - 1) * per_page
 
-    history_records, err = db.get_sensor_history(
-        sensor_ids=[], all=True, n=per_page + 1, offset=offset
+    history_records, count, err = db.get_sensor_history(
+        n=per_page, offset=offset
     )
     if err is not None:
         print(err)
         db_error = True
+        history_records = []
+        count = 0
 
-    has_next = len(history_records) > per_page if history_records else False
-    history_records = history_records[:per_page] if history_records else []
+    has_next = (offset + per_page) < count
     history_data = []
     history_columns = [
         "기준 시간",
@@ -469,8 +458,8 @@ def environment():
         labels.append(curr.strftime("%y%m%d"))
         curr += timedelta(days=1)
 
-    graph_records, err = db.get_sensor_history(
-        sensor_ids=[], all=True, start_date=start_date, end_date=end_date
+    graph_records, _, err = db.get_sensor_history(
+        start_date=start_date, end_date=end_date
     )
     if err is not None:
         db_error = True
@@ -555,42 +544,8 @@ def environment():
     )
 
 
-def run_ros_thread(battery_node, image_node):
-    global IMGS
-
-    executor = MultiThreadedExecutor()
-    executor.add_node(battery_node)
-    executor.add_node(image_node)
-
-    try:
-        while rclpy.ok():
-            executor.spin_once()
-
-            latest_img = image_node.get_image()
-            if latest_img is not None:
-                with IMGS_LOCK:
-                    IMGS["robot_side_camera"] = latest_img
-
-    except Exception as e:
-        print(f"ROS Spin Error: {e}")
-    finally:
-        executor.shutdown()
-        rclpy.shutdown()
-
-
 if __name__ == "__main__":
     try:
-        rclpy.init()
-        BATTERY_MONITOR = battery_node.BatteryMonitor()
-        IMAGE_RECEIVER = real_time_image.RobotWebBridge()
-
-        ros_thread = threading.Thread(
-            target=run_ros_thread, args=[BATTERY_MONITOR, IMAGE_RECEIVER], daemon=True
-        )
-        ros_thread.start()
-
-        time.sleep(1.0)
-
         app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
         # app.run(host="0.0.0.0", port=5000, debug=True)
     except Exception as e:

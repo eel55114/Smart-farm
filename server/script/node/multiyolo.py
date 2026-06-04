@@ -71,7 +71,7 @@ class TomatoBestFrameNode(Node):
         # 짧은 문자열 저장이므로 세션 스코프 내에서 바로 처리합니다.
         with self.db.session_scope() as session:
             try:
-                err = self.db.update_robot_state(status_str)
+                err = self.db.update_robot([datatype.Robot(id=1, state=status_str)])
                 if err:
                     self.get_logger().error(f"Failed to save robot status: {err}")
                 else:

@@ -1,10 +1,9 @@
 from contextlib import contextmanager
 from datetime import datetime
 
-from sqlalchemy import Float, cast, create_engine, func, select
-from sqlalchemy.orm import joinedload, scoped_session, sessionmaker
-
-from . import datatype, schema
+from script.db_manager import datatype, schema
+from sqlalchemy import Float, cast, create_engine, func, select, update
+from sqlalchemy.orm import contains_eager, joinedload, scoped_session, sessionmaker
 
 
 class DBManager:
@@ -15,13 +14,13 @@ class DBManager:
     def table_initialize(self):
         schema.Base.metadata.create_all(self.engine)
 
-    def add_new_sensor(self, data: list[datatype.Sensor]) -> Exception | None:
+    def add_new_sensor(self, sensors: list[datatype.Sensor]) -> Exception | None:
         """
         `sensor` 테이블에 (1개 이상의) 새 센서를 추가합니다.
         센서 현재 상태를 업데이트하는 것이 아닌 새로운 센서 장치를 추가합니다.
 
         Args:
-            data (list[datatype.Sensor]): 새 센서(들). 필수 필드(sensor_id, type_id), 선택 필드(value)
+            sensors (list[datatype.Sensor]): 새 센서(들). 필수 필드(id, type_id), 선택 필드(value)
 
         Returns:
             Exception | None: 작업 중 발생한 예외
@@ -29,32 +28,50 @@ class DBManager:
         """
         session = self.session_local()
         try:
-            for datum in data:
-                sensor = session.get(schema.Sensor, datum.id)
+            ids = [i.id for i in sensors]
+            stmt = select(schema.Sensor.id).where(schema.Sensor.id.in_(ids))
+            existing_ids = session.scalars(stmt).all()
 
-                if sensor is not None:
-                    return ValueError(f"Sensor already exists: {datum.id}")
+            for sensor_id in ids:
+                if sensor_id in existing_ids:
+                    return ValueError(f"Sensor already exists: {sensor_id}")
+
+            now = datetime.now()
+            new_data = []
+            for datum in sensors:
+                if datum.last_signal is not None:
+                    last_signal = datum.last_signal
+                else:
+                    last_signal = now
 
                 new_sensor = schema.Sensor(
                     id=datum.id,
                     type_id=datum.type_id,
                     value=datum.value,
                     region_id=datum.region_id,
+                    last_signal=last_signal,
                 )
 
-                session.add(new_sensor)
+                new_raw = schema.SensorRaw(
+                    sensor_id=datum.id, created_at=last_signal, value=datum.value
+                )
+
+                new_data.append(new_sensor)
+                new_data.append(new_raw)
+
+            session.add_all(new_data)
             session.commit()
         except Exception as e:
             session.rollback()
             return e
         return None
 
-    def update_sensor_data(self, data: list[datatype.Sensor]) -> Exception | None:
+    def update_sensor(self, sensors: list[datatype.Sensor]) -> Exception | None:
         """
-        `sensor`와 `sensor_raw` 테이블에 센서값을 업데이트합니다.
+        `sensor`와 `sensor_raw` 테이블에 센서 정보를 업데이트합니다.
 
         Args:
-            data (list[datatype.Sensor]): 센서(들)의 정보. 필수 필드(sensor_id, value)
+            sensors (list[datatype.Sensor]): 센서(들)의 정보. 필수 필드(id, value)
 
         Returns:
             Exception | None: 작업 중 발생한 예외
@@ -62,41 +79,63 @@ class DBManager:
         """
         session = self.session_local()
         try:
-            for datum in data:
-                sensor = session.get(schema.Sensor, datum.id)
+            ids = [i.id for i in sensors]
+            stmt = select(schema.Sensor.id).where(schema.Sensor.id.in_(ids))
+            existing_ids = set(session.scalars(stmt).all())
 
-                if sensor:
-                    sensor.value = datum.value
-                else:
-                    return ValueError(f"Invalid sensor id: {datum.id}")
+            for sensor_id in ids:
+                if sensor_id not in existing_ids:
+                    return ValueError(f"There's no sensor has ID '{sensor_id}'")
 
-                new_data = schema.SensorRaw(
-                    sensor_id=sensor.id,
-                    value=datum.value,
+            update_data = []
+            new_raws = []
+            now = datetime.now()
+
+            for datum in sensors:
+                last_signal = (
+                    datum.last_signal if datum.last_signal is not None else now
+                )
+                update_data.append(
+                    {
+                        "id": datum.id,
+                        "value": datum.value,
+                        "last_signal": last_signal,
+                    }
+                )
+                new_raws.append(
+                    schema.SensorRaw(
+                        sensor_id=datum.id,
+                        value=datum.value,
+                        created_at=last_signal,
+                    )
                 )
 
-                session.add(new_data)
+            session.execute(update(schema.Sensor), update_data)
+            session.add_all(new_raws)
             session.commit()
+            return None
+
         except Exception as e:
             session.rollback()
             return e
-        return None
 
-    def get_current_sensors(
+    def get_current_sensor(
         self,
-        sensor_ids: list[int],
-        all: bool = False,
+        sensor_ids: list[int] | None = None,
+        regions: list[int] | None = None,
+        types: list[int] | None = None,
     ) -> tuple[list[datatype.Sensor], Exception | None]:
         """
         `sensor` 테이블에 기록된 가장 최신의 센서 값을 가져옵니다.
 
         Args:
-            sensor_ids (list[int]): 가져올 센서(들)의 ID
-            all (bool): 전체 가져오기
+            sensor_ids (list[int], optional): 가져올 센서(들)의 ID
+            regions (list[int], optional): 해당하는 지역
+            types (list[int], optional): 해당하는 타입
 
         Returns:
             tuple[result, error]:
-                - result (list[datatype.Sensor]): 결과. 필드(sensor_id, value, type_name)
+                - result (list[datatype.Sensor]): 결과. 필드(id, value, type_id, type_name, region_id, region_name, last_signal)
                 - error (Exception | None): 발생한 에러
         """
         session = self.session_local()
@@ -105,8 +144,13 @@ class DBManager:
                 joinedload(schema.Sensor.sensor_type),
                 joinedload(schema.Sensor.region),
             )
-            if not all:
+
+            if sensor_ids:
                 stmt = stmt.where(schema.Sensor.id.in_(sensor_ids))
+            if regions:
+                stmt = stmt.where(schema.Sensor.region_id.in_(regions))
+            if types:
+                stmt = stmt.where(schema.Sensor.type_id.in_(types))
 
             data = session.scalars(stmt).all()
             result = []
@@ -119,6 +163,7 @@ class DBManager:
                     type_id=datum.sensor_type.id,
                     region_id=datum.region.id,
                     region_name=datum.region.name,
+                    last_signal=datum.last_signal,
                 )
                 result.append(temp)
 
@@ -130,57 +175,75 @@ class DBManager:
 
     def get_sensor_history(
         self,
-        sensor_ids: list[int],
-        all: bool = False,
+        sensor_ids: list[int] | None = None,
+        regions: list[int] | None = None,
+        types: list[int] | None = None,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
         n: int | None = None,
         offset: int | None = None,
-    ) -> tuple[list[datatype.SensorHistory], Exception | None]:
+    ) -> tuple[list[datatype.SensorHistory], int, Exception | None]:
         """
         `sensor_history`에 기록된 데이터를 가져옵니다.
         검색 범위 인자를 설정하지 않으면 제한 없이 조회합니다.
 
         Args:
-            sensor_ids (list[int]): 가져올 센서들의 ID
-            all (bool): 모두 가져오기
+            sensor_ids (list[int], optional): 가져올 센서들의 ID
+            regions (list[int], optional): 가져올 지역
+            types (list[int], optional): 가져올 센서 타입
             start_date (datetime.datetime, optional): 검색 범위 시작일
-            end_date (datetime.datetime, optional): 검색 범위 시작일
+            end_date (datetime.datetime, optional): 검색 범위 종료일
             n (int, optional): 데이터의 최대 개수 (pagination에 사용)
             offset (int, optional): 최신 데이터와의 오프셋 (pagination에 사용)
 
         Returns:
-            tuple[result, error]:
+            tuple[result, int, error]:
                 - result (list[datatype.SensorHistory])
+                - count (int): 전체 데이터 개수
                 - error (Exception | None): 발생한 에러
 
         """
         session = self.session_local()
 
         try:
-            stmt = (
+            base_stmt = (
                 select(schema.SensorHistory)
-                .options(
-                    joinedload(schema.SensorHistory.sensor).joinedload(
-                        schema.Sensor.sensor_type
-                    )
-                )
+                .join(schema.SensorHistory.sensor)
                 .order_by(schema.SensorHistory.time_bucket.desc())
             )
 
-            if not all:
-                stmt = stmt.where(schema.SensorHistory.sensor_id.in_(sensor_ids))
-
+            if sensor_ids:
+                base_stmt = base_stmt.where(
+                    schema.SensorHistory.sensor_id.in_(sensor_ids)
+                )
+            if regions:
+                base_stmt = base_stmt.where(schema.Sensor.region_id.in_(regions))
+            if types:
+                base_stmt = base_stmt.where(schema.Sensor.type_id.in_(types))
             if start_date is not None:
-                stmt = stmt.where(schema.SensorHistory.time_bucket >= start_date)
+                base_stmt = base_stmt.where(
+                    schema.SensorHistory.time_bucket >= start_date
+                )
             if end_date is not None:
-                stmt = stmt.where(schema.SensorHistory.time_bucket <= end_date)
-            if n is not None:
-                stmt = stmt.limit(n)
-            if offset is not None:
-                stmt = stmt.offset(offset)
+                base_stmt = base_stmt.where(
+                    schema.SensorHistory.time_bucket <= end_date
+                )
 
-            data = session.scalars(stmt).all()
+            count_stmt = select(func.count()).select_from(base_stmt.subquery())
+            count = session.scalar(count_stmt) or 0
+
+            query_stmt = base_stmt.options(
+                contains_eager(schema.SensorHistory.sensor).joinedload(
+                    schema.Sensor.sensor_type
+                )
+            )
+
+            if offset is not None:
+                query_stmt = query_stmt.offset(offset)
+            if n is not None:
+                query_stmt = query_stmt.limit(n)
+
+            data = session.scalars(query_stmt).all()
             result = []
 
             for datum in data:
@@ -195,20 +258,18 @@ class DBManager:
                 )
                 result.append(temp)
 
-            return result, None
+            return result, count, None
 
         except Exception as e:
             session.rollback()
-            return [], e
+            return [], 0, e
 
-    def update_robot_state(self, robot_id: int, state: str) -> Exception | None:
+    def update_robot(self, robots: list[datatype.Robot]) -> Exception | None:
         """
-        `robot_history` 테이블에 로봇 상태를 추가합니다.
+        `robot`테이블을 갱신하고 `robot_history` 테이블에 로봇 상태를 추가합니다.
 
         Args:
-            robot_id (int): 업데이트할 로봇의 ID
-            state (str): 상태 문자열
-
+            robots (list[datatype.Robot]): 업데이트할 로봇
         Returns:
             Exception | None: 발생한 에러
 
@@ -216,14 +277,43 @@ class DBManager:
         session = self.session_local()
 
         try:
-            robot = session.get(schema.Robot, robot_id)
+            ids = [i.id for i in robots]
+            stmt = select(schema.Robot).where(schema.Robot.id.in_(ids))
+            existing_robots = session.scalars(stmt).all()
+            existing_ids = {r.id for r in existing_robots}
 
-            if robot is None:
-                return ValueError(f"There's no robot with ID '{robot_id}'.")
+            for robot_id in ids:
+                if robot_id not in existing_ids:
+                    return ValueError(f"There's no robot has ID '{robot_id}'")
 
-            new_state = schema.RobotHistory(robot_id=robot_id, state=state)
+            existings = {r.id: r for r in existing_robots}
+            update_data = []
+            new_histories = []
+            now = datetime.now()
 
-            session.add(new_state)
+            for robot in robots:
+                last_signal = (
+                    robot.last_signal if robot.last_signal is not None else now
+                )
+                if existings[robot.id].last_signal < last_signal:
+                    update_data.append(
+                        {
+                            "id": robot.id,
+                            "state": robot.state,
+                            "last_signal": last_signal,
+                        }
+                    )
+
+                temp = schema.RobotHistory(
+                    robot_id=robot.id, state=robot.state, created_at=last_signal
+                )
+                new_histories.append(temp)
+
+            new_histories = sorted(new_histories, key=lambda x: x.created_at)
+
+            if update_data:
+                session.execute(update(schema.Robot), update_data)
+            session.add_all(new_histories)
             session.commit()
 
             return None
@@ -233,24 +323,29 @@ class DBManager:
 
     def get_robot_history(
         self,
-        ids: list[int],
-        all: bool = False,
+        robot_ids: list[int] | None = None,
+        regions: list[int] | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
         n: int | None = None,
         offset: int | None = None,
-    ) -> tuple[list[datatype.RobotState], Exception | None]:
+    ) -> tuple[list[datatype.RobotHistory], int, Exception | None]:
         """
-        `sensor_history`에 기록된 로봇 상태를 가져옵니다.
+        `robot_history`에 기록된 로봇 상태를 가져옵니다.
         검색 범위 인자를 설정하지 않으면 제한 없이 조회합니다.
 
         Args:
-            ids (list[int]): 조회할 로봇의 ID 목록
-            all (bool): ID 인자를 무시하고 전체 조회
+            robot_ids (list[int], optional): 조회할 로봇의 ID 목록
+            regions (list[int], optional): 조회할 지역
+            start_date (datetime.datetime, optional): 검색 범위 시작일
+            end_date (datetime.datetime, optional): 검색 범위 종료일
             n (int, optional): 검색 개수
             offset (int, optional): 최신 기록으로부터 떨어진 거리
 
         Returns:
-            tuple[result, error]:
-                - result (list[datatype.RobotState])
+            tuple[result, count, error]:
+                - result (list[datatype.RobotHistory])
+                - count (int): 전체 데이터 개수
                 - error (Exception | None): 발생한 에러
 
         """
@@ -258,21 +353,39 @@ class DBManager:
         session = self.session_local()
 
         try:
-            stmt = select(schema.RobotHistory).order_by(schema.RobotHistory.id.desc())
+            base_stmt = (
+                select(schema.RobotHistory)
+                .join(schema.Robot)
+                .order_by(schema.RobotHistory.id.desc())
+            )
 
-            if not all:
-                stmt = stmt.where(schema.Robot.id.in_(ids))
+            if robot_ids:
+                base_stmt = base_stmt.where(schema.RobotHistory.robot_id.in_(robot_ids))
+            if regions:
+                base_stmt = base_stmt.where(schema.Robot.region_id.in_(regions))
+            if start_date is not None:
+                base_stmt = base_stmt.where(
+                    schema.RobotHistory.created_at >= start_date
+                )
+            if end_date is not None:
+                base_stmt = base_stmt.where(schema.RobotHistory.created_at <= end_date)
+
+            count_stmt = select(func.count()).select_from(base_stmt.subquery())
+            count = session.scalar(count_stmt) or 0
+
+            query_stmt = base_stmt.options(contains_eager(schema.RobotHistory.robot))
+
             if offset is not None:
-                stmt = stmt.offset(offset)
+                query_stmt = query_stmt.offset(offset)
             if n is not None:
-                stmt = stmt.limit(n)
+                query_stmt = query_stmt.limit(n)
 
-            data = session.scalars(stmt)
+            data = session.scalars(query_stmt)
 
             result = []
 
             for datum in data:
-                temp = datatype.RobotState(
+                temp = datatype.RobotHistory(
                     id=datum.id,
                     created_at=datum.created_at,
                     robot_id=datum.robot_id,
@@ -281,57 +394,89 @@ class DBManager:
 
                 result.append(temp)
 
+            return result, count, None
+        except Exception as e:
+            session.rollback()
+            return [], 0, e
+
+    def get_current_robot(
+        self, robot_ids: list[int] | None = None, regions: list[int] | None = None
+    ) -> tuple[list[datatype.Robot], Exception | None]:
+        """
+        `robot` 테이블에서 현재 로봇 정보를 가져옵니다.
+
+        Args:
+            robot_ids (list[int], optional): 조회할 로봇 ID
+            regions (list[int], optional): 조회할 지역
+
+        Returns:
+            tuple[result, error]:
+                - result (list[datatype.Robot])
+                - error (Exception | None): 발생한 에러
+        """
+        session = self.session_local()
+
+        try:
+            stmt = select(schema.Robot)
+
+            if robot_ids:
+                stmt = stmt.where(schema.Robot.id.in_(robot_ids))
+            if regions:
+                stmt = stmt.where(schema.Robot.region_id.in_(regions))
+
+            data = session.scalars(stmt).all()
+            result = []
+            for datum in data:
+                temp = datatype.Robot(
+                    id=datum.id,
+                    state=datum.state,
+                    region_id=datum.region_id,
+                    name=datum.name,
+                    last_signal=datum.last_signal,
+                )
+
+                result.append(temp)
+
             return result, None
+
         except Exception as e:
             session.rollback()
             return [], e
 
-    def get_robot_state(
-        self, robot_id: int
-    ) -> tuple[datatype.RobotState, Exception | None]:
+    def update_plant(self, plants: list[datatype.Plant]) -> Exception | None:
         """
-        `sensor_history`에 기록된 로봇의 현재 상태(최신 기록 1개)를 가져옵니다.
+        `plant` 테이블에 작물 정보를 업데이트합니다.
 
         Args:
-            robot_id (int): 조회할 로봇 ID
-
-        Returns:
-            tuple[result, error]:
-                - result (list[datatype.RobotState])
-                - error (Exception | None): 발생한 에러
-        """
-        result, err = self.get_robot_history(ids=[robot_id], n=1)
-
-        if result is not None:
-            result = result[0]
-
-        return result, err
-
-    def update_plant(self, data: list[datatype.Plant]) -> Exception | None:
-        """
-        `plant` 테이블에 식물 정보를 업데이트합니다.
-
-        Args:
-            data (list[datatype.Plant]): 수정할 작물
+            plants (list[datatype.Plant]): 업데이트할 작물
 
         Returns:
             Exception | None: 발생한 에러
 
         """
         session = self.session_local()
+
         try:
-            for datum in data:
-                plant = session.get(schema.Plant, datum.id)
+            ids = [i.id for i in plants]
+            stmt = select(schema.Plant.id).where(schema.Plant.id.in_(ids))
+            existing_ids = set(session.scalars(stmt).all())
 
-                if plant is not None:
-                    if datum.name is not None:
-                        plant.name = datum.name
+            for plant_id in ids:
+                if plant_id not in existing_ids:
+                    return ValueError(f"There's no plant has ID '{plant_id}'")
 
-                    plant.maturity = datum.maturity
-                    plant.is_disease = datum.is_disease
-                else:
-                    return ValueError(f"Invalid plant_id: {datum.id}")
+            update_data = []
+            for datum in plants:
+                upd = {
+                    "id": datum.id,
+                    "maturity": datum.maturity,
+                    "is_disease": datum.is_disease,
+                }
+                if datum.name is not None:
+                    upd["name"] = datum.name
+                update_data.append(upd)
 
+            session.execute(update(schema.Plant), update_data)
             session.commit()
             return None
 
@@ -339,15 +484,19 @@ class DBManager:
             session.rollback()
             return e
 
-    def get_plant_state(
-        self, ids: list[int], all: bool = False
+    def get_current_plant(
+        self,
+        plant_ids: list[int] | None = None,
+        regions: list[int] | None = None,
+        types: list[int] | None = None,
     ) -> tuple[list[datatype.Plant], Exception | None]:
         """
         `plant` 테이블의 현재 상태를 가져옵니다
 
         Args:
-            ids (list[int]): 가져올 작물들의 ID
-            all (bool): 전체 가져오기. default=false
+            plant_ids (list[int], optional): 가져올 작물들의 ID
+            regions (list[int], optional): 가져올 지역
+            types (list[int], optional): 가져올 작물 유형
 
         Returns:
             tuple[result, error]:
@@ -358,8 +507,13 @@ class DBManager:
         session = self.session_local()
         try:
             stmt = select(schema.Plant)
-            if not all:
-                stmt = stmt.where(schema.Plant.id.in_(ids))
+
+            if plant_ids:
+                stmt = stmt.where(schema.Plant.id.in_(plant_ids))
+            if regions:
+                stmt = stmt.where(schema.Plant.region_id.in_(regions))
+            if types:
+                stmt = stmt.where(schema.Plant.type_id.in_(types))
 
             data = session.scalars(stmt).all()
             result = []
@@ -382,46 +536,64 @@ class DBManager:
 
     def get_plant_statistics(
         self,
-        type_ids: list[int],
+        type_ids: list[int] | None = None,
+        regions: list[int] | None = None,
         start_date: datetime | None = None,
         end_date: datetime | None = None,
         n: int | None = None,
         offset: int | None = None,
-    ) -> tuple[list[datatype.PlantStatistics], Exception | None]:
+    ) -> tuple[list[datatype.PlantStatistics], int, Exception | None]:
         """
         `plant_statistics`에 기록된 로그를 가져옵니다.
 
         Args:
-            type_ids (list[int]): 가져올 작물의 유형(들)
+            type_ids (list[int], optional): 가져올 작물의 유형(들)
+            regions (list[int], optional): 가져올 지역(들)
             start_date (datetime, optional): 검색 시작일
             end_date (datetime, optional): 검색 종료일
             n (int, optional): 데이터의 최대 개수 (pagination에 사용)
             offset (int, optional): 최신 데이터와의 오프셋 (pagination에 사용)
 
         Returns:
-            tuple[result, error]:
+            tuple[result, count, error]:
             - result (list[datatype.PlantStatistics])
+            - count (int): 전체 데이터 개수
             - error (Exception | None): 발생한 에러
         """
 
         session = self.session_local()
         try:
-            stmt = (
-                select(schema.PlantStatistics)
-                .where(schema.PlantStatistics.type_id.in_(type_ids))
-                .order_by(schema.PlantStatistics.id.desc())
+            base_stmt = select(schema.PlantStatistics).order_by(
+                schema.PlantStatistics.id.desc()
             )
 
+            if type_ids:
+                base_stmt = base_stmt.where(
+                    schema.PlantStatistics.type_id.in_(type_ids)
+                )
+            if regions:
+                base_stmt = base_stmt.where(
+                    schema.PlantStatistics.region_id.in_(regions)
+                )
             if start_date is not None:
-                stmt = stmt.where(schema.PlantStatistics.created_at >= start_date)
+                base_stmt = base_stmt.where(
+                    schema.PlantStatistics.created_at >= start_date
+                )
             if end_date is not None:
-                stmt = stmt.where(schema.PlantStatistics.created_at <= end_date)
-            if n is not None:
-                stmt = stmt.limit(n)
-            if offset is not None:
-                stmt = stmt.offset(offset)
+                base_stmt = base_stmt.where(
+                    schema.PlantStatistics.created_at <= end_date
+                )
 
-            data = session.scalars(stmt).all()
+            count_stmt = select(func.count()).select_from(base_stmt.subquery())
+            count = session.scalar(count_stmt) or 0
+
+            query_stmt = base_stmt
+            if offset is not None:
+                query_stmt = query_stmt.offset(offset)
+            if n is not None:
+                query_stmt = query_stmt.limit(n)
+
+            data = session.scalars(query_stmt).all()
 
             result = []
             for datum in data:
@@ -431,15 +603,16 @@ class DBManager:
                         created_at=datum.created_at,
                         type_id=datum.type_id,
                         avg_maturity=datum.avg_maturity,
+                        region_id=datum.region_id,
                         disease_ratio=datum.disease_ratio,
                     )
                 )
 
-            return result, None
+            return result, count, None
 
         except Exception as e:
             session.rollback()
-            return [], e
+            return [], 0, e
 
     def calculate_plant_statistics(
         self,
@@ -449,7 +622,7 @@ class DBManager:
 
         Returns:
             tuple[result, error]:
-                - result (list[PlantStatistics]): 생성된 스냅샷
+                - result (list[datatype.PlantStatistics]): 생성된 스냅샷
                 - error (Exception | None): 발생한 에러
         """
         session = self.session_local()
@@ -457,9 +630,10 @@ class DBManager:
         try:
             stmt = select(
                 schema.Plant.type_id,
+                schema.Plant.region_id,
                 func.avg(schema.Plant.maturity).label("avg_maturity"),
                 func.avg(cast(schema.Plant.is_disease, Float)).label("disease_ratio"),
-            ).group_by(schema.Plant.type_id)
+            ).group_by(schema.Plant.type_id, schema.Plant.region_id)
 
             data = session.execute(stmt).all()
 
@@ -471,6 +645,7 @@ class DBManager:
                         type_id=datum.type_id,
                         avg_maturity=datum.avg_maturity,
                         disease_ratio=datum.disease_ratio,
+                        region_id=datum.region_id,
                     )
                 )
 
@@ -479,6 +654,7 @@ class DBManager:
                         type_id=datum.type_id,
                         avg_maturity=datum.avg_maturity,
                         disease_ratio=datum.disease_ratio,
+                        region_id=datum.region_id,
                     )
                 )
 
@@ -519,21 +695,42 @@ class DBManager:
             return dict(), e
 
     def update_actuator(self, actuators: list[datatype.Actuator]) -> Exception | None:
+        """
+        `actuator` 테이블에 액추에이터 상태를 업데이트합니다.
 
+        Args:
+            actuators (list[datatype.Actuator]): 업데이트할 액추에이터 목록
+
+        Returns:
+            Exception | None: 발생한 에러
+        """
         session = self.session_local()
 
         try:
-            for datum in actuators:
-                actuator = session.get(schema.Actuator, datum.id)
-                if actuator is None:
-                    return ValueError(f"There's no actuator has ID '{id}'")
+            ids = [i.id for i in actuators]
+            stmt = select(schema.Actuator.id).where(schema.Actuator.id.in_(ids))
+            existing_ids = set(session.scalars(stmt).all())
 
-                actuator.state = datum.state
-                if datum.type_id is not None:
-                    actuator.type_id = datum.type_id
-                if datum.region_id is not None:
-                    actuator.region_id = datum.region_id
+            for actuator_id in ids:
+                if actuator_id not in existing_ids:
+                    return ValueError(f"There's no actuator has ID '{actuator_id}'")
 
+            update_data = []
+            now = datetime.now()
+
+            for actuator in actuators:
+                last_signal = (
+                    actuator.last_signal if actuator.last_signal is not None else now
+                )
+                update_data.append(
+                    {
+                        "id": actuator.id,
+                        "state": actuator.state,
+                        "last_signal": last_signal,
+                    }
+                )
+
+            session.execute(update(schema.Actuator), update_data)
             session.commit()
 
             return None
@@ -542,21 +739,39 @@ class DBManager:
             session.rollback()
             return e
 
-    def get_actuator(
-        self, ids: list[int]
+    def get_current_actuator(
+        self,
+        actuator_ids: list[int] | None = None,
+        regions: list[int] | None = None,
+        types: list[int] | None = None,
     ) -> tuple[list[datatype.Actuator], Exception | None]:
+        """
+        `actuator` 테이블의 현재 상태를 가져옵니다.
 
+        Args:
+            actuator_ids (list[int], optional): 가져올 액추에이터들의 ID
+            regions (list[int], optional): 해당하는 지역
+            types (list[int], optional): 해당하는 타입
+
+        Returns:
+            tuple[result, error]:
+                - result (list[datatype.Actuator]): 결과
+                - error (Exception | None): 발생한 에러
+        """
         session = self.session_local()
 
         try:
-            stmt = (
-                select(schema.Actuator)
-                .where(schema.Actuator.id.in_(ids))
-                .options(
-                    joinedload(schema.Actuator.region),
-                    joinedload(schema.Actuator.actuator_type),
-                )
+            stmt = select(schema.Actuator).options(
+                joinedload(schema.Actuator.region),
+                joinedload(schema.Actuator.actuator_type),
             )
+
+            if actuator_ids:
+                stmt = stmt.where(schema.Actuator.id.in_(actuator_ids))
+            if regions:
+                stmt = stmt.where(schema.Actuator.region_id.in_(regions))
+            if types:
+                stmt = stmt.where(schema.Actuator.type_id.in_(types))
 
             data = session.scalars(stmt).all()
             result: list[datatype.Actuator] = []
@@ -569,6 +784,7 @@ class DBManager:
                     region_id=datum.region_id,
                     type_name=datum.actuator_type.type_name,
                     region_name=datum.region.name,
+                    last_signal=datum.last_signal,
                 )
 
                 result.append(temp)
@@ -601,5 +817,3 @@ if __name__ == "__main__":
     db = DBManager(url)
     with db.session_scope() as session:
         print(db.get_active_plant_type())
-        # update_plant() <- 작물 상태
-        # update_robot_state() <- 로봇 상태

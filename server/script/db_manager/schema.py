@@ -81,6 +81,7 @@ class Sensor(Base):
     type_id: Mapped[int] = mapped_column("type_id", ForeignKey("sensor_type.id"))
     region_id: Mapped[int] = mapped_column("region_id", ForeignKey("region.id"))
     value: Mapped[float] = mapped_column("value")
+    last_signal: Mapped[datetime] = mapped_column("last_signal")
 
     raw_data: Mapped[List["SensorRaw"]] = relationship(
         back_populates="sensor", cascade="all, delete-orphan"
@@ -133,9 +134,10 @@ class Actuator(Base):
     type_id: Mapped[int] = mapped_column("type_id", ForeignKey("actuator_type.id"))
     region_id: Mapped[int] = mapped_column("region_id", ForeignKey("region.id"))
     state: Mapped[str] = mapped_column("state", String(30))
+    last_signal: Mapped[datetime] = mapped_column("last_signal")
 
     actuator_type: Mapped[ActuatorType] = relationship(back_populates="actuators")
-    region: Mapped["Region"] = relationship(back_populates="sensors")
+    region: Mapped["Region"] = relationship(back_populates="actuators")
 
 
 class Robot(Base):
@@ -143,6 +145,8 @@ class Robot(Base):
     id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=False)
     region_id: Mapped[int] = mapped_column("region_id", ForeignKey("region.id"))
     name: Mapped[str] = mapped_column("name", String(30))
+    state: Mapped[str] = mapped_column("state", String(50))
+    last_signal: Mapped[datetime] = mapped_column("last_signal")
 
     region: Mapped["Region"] = relationship(back_populates="robots")
     histories: Mapped[List["RobotHistory"]] = relationship(back_populates="robot")
@@ -155,6 +159,6 @@ class RobotHistory(Base):
         "created_at", DateTime, server_default=func.now()
     )
     robot_id: Mapped[int] = mapped_column("robot_id", ForeignKey("robot.id"))
-    state: Mapped[str] = mapped_column("state", String(30))
+    state: Mapped[str] = mapped_column("state", String(50))
 
     robot: Mapped["Robot"] = relationship(back_populates="histories")
