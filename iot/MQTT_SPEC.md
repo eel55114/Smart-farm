@@ -27,14 +27,8 @@ IoT 허브 -> 서버
 IoT 허브 -> 서버
 - 토픽명: `smartfarm/{region_id}/iot/telemetry/device/{device_id}`
 - 페이로드: json string {
-    "state": bool,
-}
-
-### 2-3. 연결 종료/회복
-- 토픽명: `smartfarm/{region_id}/iot/telemetry/broken/{device_id}`
-- 토픽명: `smartfarm/{region_id}/iot/telemetry/recover/{device_id}`
-- 페이로드: json string {
     "time": (int) timestamp,
+    "state": bool,
 }
 
 # 3. 로봇

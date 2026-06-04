@@ -28,9 +28,8 @@ class Connector:
             assert bt_addr is not None
             assert bt_port is not None
             assert region_id is not None
-        except:
-            print("환경 변수 인식 실패")
-            return
+        except AssertionError:
+            raise ValueError("환경 변수 인식 실패")
 
         self.MQTT_HOST = mqtt_host
         self.MQTT_PORT = int(mqtt_port)
@@ -57,7 +56,9 @@ class Connector:
             try:
                 print("블루투스 연결 시도 중")
                 sock = socket.socket(
-                    socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM
+                    socket.AF_BLUETOOTH,  # type: ignore
+                    socket.SOCK_STREAM,
+                    socket.BTPROTO_RFCOMM,  # type: ignore
                 )
                 sock.connect((self.BT_ADDR, self.BT_PORT))
                 sock.setblocking(False)
@@ -89,12 +90,16 @@ class Connector:
                                 self.send_message(line)
 
                             buffer = lines[-1]
+                    else:
+                        self.bt_sock = None
+
                 except BlockingIOError:
                     pass
                 except Exception as e:
                     print(f"에러 발생: {e}")
-                    self.bt_sock.close()
-                    self.bt_sock = None
+                    if self.bt_sock:
+                        self.bt_sock.close()
+                        self.bt_sock = None
 
                 time.sleep(0.05)
         finally:
@@ -104,19 +109,19 @@ class Connector:
             self.client.disconnect()
 
     def send_message(self, msg):
-        source_id, source_type, *value = msg.split("+")
+        device_id, device_type, *value = msg.split("+")
         payload = ""
         topic = ""
 
         # 센서
-        if source_type == 0:
-            topic = f"{self.TOPIC_PREFIX['sensor_telemetry']}{source_id}"
+        if device_type == "0":
+            topic = f"{self.TOPIC_PREFIX['sensor_telemetry']}{device_id}"
 
             payload = msg_packer(time=time.time(), value=value[0])
 
         # 디바이스
-        elif source_type == 1:
-            topic = f"{self.TOPIC_PREFIX['device_telemetry']}{source_id}"
+        elif device_type == "1":
+            topic = f"{self.TOPIC_PREFIX['device_telemetry']}{device_id}"
 
             payload = msg_packer(time=time.time(), state=value[0])
 
@@ -125,23 +130,23 @@ class Connector:
 
     def on_connect(self, client, userdata, flags, reason_code, properties):
         if reason_code == 0:
-            client.subscribe(self.TOPIC_PREFIX["device_command"])
+            client.subscribe(self.TOPIC_PREFIX["device_command"] + "#")
 
     def on_message(self, client, userdata, msg):
+        topic = msg.topic
+        payload = json.loads(msg.payload.decode("utf-8"))
+
+        device_id = topic.split("/")[-1]
+        command = ""
+        if payload["on"]:
+            if device_id == "0":
+                command = "lighton"
+        else:
+            if device_id == "0":
+                command = "lightoff"
+
         try:
-            topic = msg.topic
-            payload = json.loads(msg.payload.decode("utf-8"))
-
-            device_id = topic.split("/")[-1]
-            command = ""
-            if payload["on"]:
-                if device_id == 0:
-                    command = "lighton"
-            else:
-                if device_id == 0:
-                    command = "lightoff"
-
-            if self.bt_sock:
+            if command and self.bt_sock:
                 self.bt_sock.send(command.encode("utf-8"))
         except Exception as e:
             print(f"블루투스 데이터 전송 실패: {e}")
