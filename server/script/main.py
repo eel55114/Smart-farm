@@ -1,6 +1,5 @@
 import json
 import os
-import time
 from datetime import datetime, timedelta
 
 import cv2
@@ -8,13 +7,27 @@ import numpy as np
 import rclpy
 from db_manager.manager import DBManager
 from dotenv import load_dotenv
-from flask import Flask, Response, render_template, request
+from flask import Flask, render_template, request
 from flask_bootstrap import Bootstrap5
+from flask_socketio import SocketIO
 
 load_dotenv()
 
 app = Flask(__name__)
 bootstrap = Bootstrap5(app)
+
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+
+
+@socketio.on("stream_front")
+def handle_cam1(data):
+    socketio.emit("render_front", data, include_self=False)
+
+
+@socketio.on("stream_side")
+def handle_cam2(data):
+    socketio.emit("render_side", data, include_self=False)
+
 
 conn_url = os.getenv("DATABASE_URL")
 assert conn_url is not None
@@ -29,33 +42,6 @@ EMPTY_IMG_BINARY = buf.tobytes()
 @app.teardown_appcontext
 def shutdown_session(exception=None):
     db.session_local.remove()
-
-
-def generate_frames(img_name):
-    while True:
-        # yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame_data + b"\r\n")
-        pass  # todo
-        yield (
-            b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + EMPTY_IMG_BINARY + b"\r\n"
-        )
-
-        time.sleep(0.04)
-
-
-@app.route("/robot_side_camera")
-def robot_side_camera():
-    return Response(
-        generate_frames("robot_side_camera"),
-        mimetype="multipart/x-mixed-replace; boundary=frame",
-    )
-
-
-@app.route("/robot_front_camera")
-def robot_front_camera():
-    return Response(
-        generate_frames("robot_front_camera"),
-        mimetype="multipart/x-mixed-replace; boundary=frame",
-    )
 
 
 @app.route("/")
@@ -399,9 +385,7 @@ def environment():
     per_page = 15
     offset = (page - 1) * per_page
 
-    history_records, count, err = db.get_sensor_history(
-        n=per_page, offset=offset
-    )
+    history_records, count, err = db.get_sensor_history(n=per_page, offset=offset)
     if err is not None:
         print(err)
         db_error = True
@@ -546,8 +530,8 @@ def environment():
 
 if __name__ == "__main__":
     try:
-        app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
-        # app.run(host="0.0.0.0", port=5000, debug=True)
+        # app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
+        app.run(host="0.0.0.0", port=5000, debug=True)
     except Exception as e:
         print(f"Startup Critical Error: {e}")
     finally:
