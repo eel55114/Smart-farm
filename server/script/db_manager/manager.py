@@ -1,9 +1,10 @@
 from contextlib import contextmanager
 from datetime import datetime
 
-from script.db_manager import datatype, schema
 from sqlalchemy import Float, cast, create_engine, func, select, update
 from sqlalchemy.orm import contains_eager, joinedload, scoped_session, sessionmaker
+
+from . import datatype, schema
 
 
 class DBManager:

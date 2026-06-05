@@ -2,10 +2,9 @@ import math
 import time
 from datetime import datetime
 
-import datatype
 import pytest
-import schema
-from manager import DBManager
+from script.db_manager import datatype, schema
+from script.db_manager.manager import DBManager
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
