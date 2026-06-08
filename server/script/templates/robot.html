@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 {% import "_logs_viewer.html" as logs_viewer %}
-{% block title %}로봇 관리{% endblock %}
+{% block title %}로봇 수동 제어{% endblock %}
 
 {% block content %}
-<h1 class="display-5 mb-3">로봇 관리</h1>
+<h1 class="display-5 mb-3">로봇 관리 - 수동 제어</h1>
 {% if connection_error %}
 <div class="alert alert-danger alert-dismissible fade show" role="alert">
     <strong>오류:</strong> {{ error_target }}에 접속할 수 없습니다. 잠시 후에 다시 시도해 주세요.
@@ -11,14 +11,40 @@
 </div>
 {% endif %}
 <div class="row">
-    <!-- 좌측(로봇 카메라 + 조작부) -->
+    <!-- 좌측(맵) -->
+    <div class="col-md-6 mb-4">
+        <div class="bg-light p-4 rounded shadow-sm mb-4 h-100">
+            <h4 class="mb-3 text-primary border-bottom pb-2">로봇 조작</h4>
+
+            <canvas id="map" class="w-100" width="400", height="300"></canvas>
+        </div>
+    </div>
+
+    <!-- 우측(로봇 카메라 + 조작부) -->
     <div class="col-md-6 mb-4">
 
         <!-- 로봇 카메라 -->
         <div class="bg-light p-4 rounded shadow-sm mb-4 h-100">
 
             <h4 class="mb-3 text-primary border-bottom pb-2">로봇 조작</h4>
-            <img src="{{ url_for('robot_side_camera') }}" class="img-fluid border" alt="실시간 모니터링">
+            <div class="row g-2">
+                <div class="col-6">
+                    <div class="position-relative border rounded bg-dark text-center overflow-hidden">
+                        <span class="position-absolute top-0 start-0 bg-primary text-white px-2 py-1 small opacity-80">전면</span>
+                        <span id="framerate_front" class="position-absolute top-0 end-0 bg-secondary text-white px-2 py-1 small opacity-70">--</span>
+                            <img id="img_front" src="" class="img-fluid w-100" style="min-height: 150px; object-fit: contain;" alt="전면 대기 중">
+                    </div>
+                </div>
+
+                <div class="col-6">
+                    <div class="position-relative border rounded bg-dark text-center overflow-hidden">
+                        <span class="position-absolute top-0 start-0 bg-secondary text-white px-2 py-1 small opacity-80">측면</span>
+                        <span id="framerate_side" class="position-absolute top-0 end-0 bg-secondary text-white px-2 py-1 small opacity-70">--</span>
+                        <img id="img_side" src="" class="img-fluid w-100" style="min-height: 150px; object-fit: contain;" alt="측면 대기 중">
+                    </div>
+                </div>
+
+            </div>
 
             <!-- 조작 및 상태부 -->
             <div class="d-flex justify-content-center align-items-center mt-2 mb-3 fs-5 fw-bold">
@@ -76,7 +102,71 @@
             </div>
         </div>
 
+    
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
         <script>
+            // 이미지 갱신
+            const socket = io();
+
+            function updateImage(elementId, arrayBuffer) {
+                const imgElement = document.getElementById(elementId);
+                
+                if (!imgElement) {
+                    return;
+                }
+
+                const blob = new Blob([new Uint8Array(arrayBuffer)], { type: "image/jpeg" });
+                const urlCreator = window.URL || window.webkitURL;
+                const imageUrl = urlCreator.createObjectURL(blob);
+
+                imgElement.onload = function() {
+                    urlCreator.revokeObjectURL(imageUrl);
+                };
+
+                imgElement.src = imageUrl;
+            }
+
+            let frontInfo = {
+                lastSignal: performance.now(),
+                lastRenew: -1500,
+                deque: new Array(),
+                elem: document.querySelector("#framerate_front")
+            }
+
+            let sideInfo = {
+                lastSignal: performance.now(),
+                lastRenew: -1500,
+                deque: new Array(),
+                elem: document.querySelector("#framerate_side")
+            }
+
+            function updateInfo(info) {
+                const now = performance.now();
+                const gap = now - info.lastSignal;
+                info.deque.push(gap);
+                if (info.deque.length > 20) {
+                    info.deque.shift();
+                }
+                const meanGap = info.deque.reduce((x,y) => x+y)/info.deque.length;
+                if (now - info.lastRenew > 500) {
+                    const round = meanGap < 1000 ? 0 : 1;
+                    info.elem.innerText = (1000/meanGap).toFixed(round);
+                    info.lastRenew = now;
+                }
+                info.lastSignal = now;
+            }
+
+            socket.on('render_front', function(data) {
+                updateImage('img_front', data);
+                updateInfo(frontInfo);
+            });
+
+            socket.on('render_side', function(data) {
+                updateImage('img_side', data);
+                updateInfo(sideInfo);
+            });
+
+            // 로봇 명령 전송
             document.addEventListener("DOMContentLoaded", function () {
                 const modeSwitch = document.getElementById("modeSwitch");
                 const dpadControl = document.getElementById("dpadControl");
@@ -114,13 +204,6 @@
 
         </script>
 
-    </div>
-    <!-- 우측(로봇 이력) -->
-    <div class="col-md-6 mb-4">
-
-        {% set table_name = '로봇 이력' %}
-        {{ logs_viewer.render_items(table_name, history_columns, history_data, page, has_next,
-        endpoint=request.endpoint) }}
     </div>
 </div>
 {% endblock %}
