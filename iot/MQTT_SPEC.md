@@ -53,7 +53,7 @@ IoT 허브 -> 서버
 - 토픽명: `smartfarm/{region_id}/robot/telemetry/{robot_id}/state`
 #### 2-1-2. 모드
 <-로봇<-
-- 토픽명: `smartfarm/{region_id}/robot/telemetry/{robot_id}/robot_mode`
+- 토픽명: `smartfarm/{region_id}/robot/command/{robot_id}/robot_mode`
 #### 2-1. 지도 선택
 
 
