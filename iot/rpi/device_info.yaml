@@ -1,0 +1,48 @@
+# 기기 타입
+# 0: 센서(sensor)
+# 1: 액추에이터(actuator)
+
+# 센서 타입
+# 0: 조도
+# 1: 습도
+# 2: 온도
+# 3: 화재
+
+# 액추에이터 타입
+# 0: 모터
+# 1: 펌프
+# 2: 조명
+
+
+# Region 번호
+1:
+    # 기기 타입
+    # 센서
+    sensor:
+        0:
+            name: 조도
+            sensor_type: 
+            value_type: float
+        1:
+            name: 습도
+            sensor_type: 
+            value_type: float
+        2:
+            name: 온도
+            sensor_type: 
+            value_type: float
+        3:
+            name: "화재"
+            sensor_type: 
+            value_type: bool
+    # 액추에이터
+    actuator:
+        4: 
+            name: 환풍기
+            state_type: 
+        5: 
+            name: 펌프
+        6: 
+            name: 조명
+
+    
