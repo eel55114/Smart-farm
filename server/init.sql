@@ -55,6 +55,7 @@ CREATE TABLE sensor(
 	id INT PRIMARY KEY,             -- 개별 센서 ID
     type_id INT NOT NULL,           -- 센서 유형 ID
     region_id INT NOT NULL,         -- 재배지 ID
+    name VARCHAR(30) NULL,          -- 센서 이름
     value FLOAT NOT NULL,           -- 센서값
     last_signal TIMESTAMP NOT NULL, -- 마지막 신호 연결
 

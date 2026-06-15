@@ -25,25 +25,19 @@ def control_actuator():
 
 @environment_bp.route("/api/current_sensors")
 def get_current_sensors():
-    SENSORS = {
-        1: "lightbulb",
-        2: "water_drop",
-        3: "thermometer",
-        4: "local_fire_department",
-    }
-
     db_error = False
-    sensors, err = db.get_current_sensor()
+    region_id = request.args.get("region", type=int)
+    regions_filter = [region_id] if region_id else None
+
+    sensors, err = db.get_current_sensor(regions=regions_filter)
     if err is not None:
         db_error = True
 
     data = []
     for i in sensors:
         is_danger = False
-        if i.type_id == 1:  # 조도
+        if i.type_id in [1, 2, 5]:  # 조도, 습도, 토양습도
             value = f"{min(round(i.value * 100, 2), 100)}%"
-        elif i.type_id == 2:  # 습도
-            value = f"{min(round(i.value, 2), 100)}%"
         elif i.type_id == 3:  # 온도
             value = f"{i.value}°C"
         elif i.type_id == 4:  # 화염
@@ -52,17 +46,19 @@ def get_current_sensors():
         else:
             value = "알 수 없음"
 
+        display_name = i.name if (i.name and i.name.strip()) else i.type_name
         temp = {
             "id": i.id,
+            "region_id": i.region_id,
+            "region_name": i.region_name,
+            "name": i.name,
+            "type_id": i.type_id,
             "type_name": i.type_name,
-            "icon_name": SENSORS[i.type_id],
+            "display_name": display_name,
             "value": value,
             "is_danger": is_danger,
         }
         data.append(temp)
-        print(i.type_id)
-        print(temp)
-
     return render_template(
         "_sensor_state.html",
         data=data,
@@ -76,13 +72,16 @@ def environment():
 
     page = request.args.get("page", 1, type=int)
     days = request.args.get("days", 5, type=int)
+    region_id = request.args.get("region", type=int)
+    regions_filter = [region_id] if region_id else None
 
     per_page = 15
     offset = (page - 1) * per_page
 
-    history_records, count, err = db.get_sensor_history(n=per_page, offset=offset)
+    history_records, count, err = db.get_sensor_history(
+        n=per_page, offset=offset, regions=regions_filter
+    )
     if err is not None:
-        print(err)
         db_error = True
         history_records = []
         count = 0
@@ -138,7 +137,7 @@ def environment():
         curr += timedelta(days=1)
 
     graph_records, _, err = db.get_sensor_history(
-        start_date=start_date, end_date=end_date
+        start_date=start_date, end_date=end_date, regions=regions_filter
     )
     if err is not None:
         db_error = True
@@ -220,4 +219,6 @@ def environment():
         days=days,
         charts_data=json.dumps(charts_data),
         db_error=db_error,
+        count=count,
+        per_page=per_page,
     )

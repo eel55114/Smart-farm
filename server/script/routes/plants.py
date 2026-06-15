@@ -10,12 +10,15 @@ plants_bp = Blueprint("plants", __name__, url_prefix="/plants")
 @plants_bp.route("/")
 def plants():
     db_error = False
+    region_id = request.args.get("region", type=int)
+    regions_filter = [region_id] if region_id else None
+
     types, err = db.get_active_plant_type()
     if err is not None:
         types = dict()
 
     # 현재 작물 정보 쿼리
-    plants_data, err = db.get_current_plant()
+    plants_data, err = db.get_current_plant(regions=regions_filter)
     if err is not None:
         db_error = True
         plants_data = []
@@ -40,7 +43,7 @@ def plants():
     offset = (page - 1) * per_page
 
     history_records, count, err = db.get_plant_statistics(
-        type_ids=type_ids, n=per_page, offset=offset
+        type_ids=type_ids, n=per_page, offset=offset, regions=regions_filter
     )
     if err is not None:
         db_error = True
@@ -62,7 +65,7 @@ def plants():
 
         history_data.append(temp)
 
-    latest_records, _, err = db.get_plant_statistics(type_ids=type_ids, n=1)
+    latest_records, _, err = db.get_plant_statistics(type_ids=type_ids, n=1, regions=regions_filter)
     if err is not None:
         db_error = True
     start_date_str = request.args.get("start_date")
@@ -92,7 +95,7 @@ def plants():
         )
 
     graph_records, _, err = db.get_plant_statistics(
-        type_ids=type_ids, start_date=start_date, end_date=end_date
+        type_ids=type_ids, start_date=start_date, end_date=end_date, regions=regions_filter
     )
     if err is not None:
         db_error = True
@@ -167,4 +170,6 @@ def plants():
         days=days,
         charts_data=json.dumps(charts_data),
         db_error=db_error,
+        count=count,
+        per_page=per_page,
     )

@@ -80,6 +80,7 @@ class Sensor(Base):
     id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=False)
     type_id: Mapped[int] = mapped_column("type_id", ForeignKey("sensor_type.id"))
     region_id: Mapped[int] = mapped_column("region_id", ForeignKey("region.id"))
+    name: Mapped[str | None] = mapped_column("name", String(30), nullable=True)
     value: Mapped[float] = mapped_column("value")
     last_signal: Mapped[datetime] = mapped_column("last_signal")
 

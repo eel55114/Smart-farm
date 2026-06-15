@@ -59,6 +59,7 @@ class DBManager:
                     type_id=datum.sensor_type.id,
                     region_id=datum.region.id,
                     region_name=datum.region.name,
+                    name=datum.name,
                     last_signal=datum.last_signal,
                 )
                 result.append(temp)
@@ -135,7 +136,7 @@ class DBManager:
 
         session = self.session_local()
         try:
-            stmt = select(schema.Plant)
+            stmt = select(schema.Plant).options(joinedload(schema.Plant.region))
 
             if plant_ids:
                 stmt = stmt.where(schema.Plant.id.in_(plant_ids))
@@ -150,6 +151,8 @@ class DBManager:
                 temp = datatype.Plant(
                     id=datum.id,
                     type_id=datum.type_id,
+                    region_id=datum.region_id,
+                    region_name=datum.region.name,
                     name=datum.name,
                     maturity=datum.maturity,
                     is_disease=datum.is_disease,
@@ -342,8 +345,9 @@ class DBManager:
                 new_sensor = schema.Sensor(
                     id=datum.id,
                     type_id=datum.type_id,
-                    value=datum.value,
                     region_id=datum.region_id,
+                    name=datum.name,
+                    value=datum.value,
                     last_signal=last_signal,
                 )
 
@@ -390,13 +394,14 @@ class DBManager:
                 last_signal = (
                     datum.last_signal if datum.last_signal is not None else now
                 )
-                update_data.append(
-                    {
-                        "id": datum.id,
-                        "value": datum.value,
-                        "last_signal": last_signal,
-                    }
-                )
+                upd = {
+                    "id": datum.id,
+                    "value": datum.value,
+                    "last_signal": last_signal,
+                }
+                if datum.name is not None:
+                    upd["name"] = datum.name
+                update_data.append(upd)
                 new_raws.append(
                     schema.SensorRaw(
                         sensor_id=datum.id,
@@ -656,6 +661,27 @@ class DBManager:
         except Exception as e:
             session.rollback()
             return dict(), e
+
+    def get_all_regions(self) -> tuple[list[datatype.Region], Exception | None]:
+        """
+        모든 재배지(Region) 정보를 가져옵니다.
+
+        Returns:
+            tuple[result, error]:
+            - result (list[datatype.Region]): 결과
+            - error (Exception | None): 발생한 에러
+        """
+        session = self.session_local()
+        try:
+            stmt = select(schema.Region)
+            data = session.scalars(stmt).all()
+            result = []
+            for datum in data:
+                result.append(datatype.Region(id=datum.id, name=datum.name))
+            return result, None
+        except Exception as e:
+            session.rollback()
+            return [], e
 
     def update_plant(self, plants: list[datatype.Plant]) -> Exception | None:
         """

@@ -19,6 +19,7 @@ class Sensor:
     # 신규 입력시 필요
     type_id: int = field(default=None)
     region_id: int = field(default=None)
+    name: str = field(default=None)
 
     # 읽기 전용
     type_name: str = field(default="")

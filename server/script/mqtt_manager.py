@@ -8,8 +8,8 @@ from datetime import datetime
 import dotenv
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
-from script.db_manager import datatype
-from script.db_manager.manager import DBManager
+from db_manager import datatype
+from db_manager.manager import DBManager
 
 
 class Connector:
@@ -98,17 +98,20 @@ class Connector:
         topic = msg.topic.split("/")
         # region_id = topic[1]
         robot_id = topic[4]
+        msg_type = topic[5]
 
-        payload = json.loads(msg.payload)
-        dt = datetime.fromtimestamp(payload["time"]) if "time" in payload else None
+        if msg_type == "state":
+            payload = json.loads(msg.payload)
+            dt = datetime.fromtimestamp(payload["time"]) if "time" in payload else None
 
-        data = datatype.Robot(
-            id=int(robot_id),
-            state=payload["state"],
-            last_signal=dt,  # type: ignore
-        )
+            data = datatype.Robot(
+                id=int(robot_id),
+                state=payload["state"],
+                last_signal=dt,  # type: ignore
+            )
 
-        self.queue.put(data)
+            self.queue.put(data)
+        # elif msg_type == "map":
 
     def _db_loop(self):
         TIMEOUT = 3
@@ -145,7 +148,7 @@ class Connector:
                 if len(robots):
                     err = self.db.update_robot(robots)
                     if err:
-                        print("센서 업데이트 중 오류 발생:", err)
+                        print("로봇 업데이트 중 오류 발생:", err)
 
     def run(self):
         self._is_running = True

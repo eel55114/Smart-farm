@@ -144,6 +144,16 @@ def test_add_new_sensor(db: DBManager):
     assert isinstance(err_invalid_region, IntegrityError)
     assert "Cannot add or update a child row" in str(err_invalid_region)
 
+    # 5. name 필드가 정상적으로 저장되고 조회되는지 테스트
+    sensor_with_name = [datatype.Sensor(id=10, region_id=1, type_id=1, value=20.0, name="테스트 센서 A")]
+    err = db.add_new_sensor(sensor_with_name)
+    assert err is None
+    
+    current_sensors, err = db.get_current_sensor(sensor_ids=[10])
+    assert err is None
+    assert len(current_sensors) == 1
+    assert current_sensors[0].name == "테스트 센서 A"
+
 
 def test_update_sensor(db: DBManager):
     # 초기 센서 세팅
