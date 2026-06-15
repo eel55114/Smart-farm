@@ -2,12 +2,10 @@
 <div class="d-flex justify-content-between align-items-center mb-3 border-bottom pb-2">
     <h4 class="mb-0 text-primary">{{ title }}</h4>
     <div class="btn-group" role="group">
-        <a href="{{ url_for(endpoint, days=5, page=page) }}"
-            class="btn btn-sm btn-outline-primary {% if days == 5 and not request.args.get('start_date') %}active{% endif %}">5일</a>
-        <a href="{{ url_for(endpoint, days=10, page=page) }}"
-            class="btn btn-sm btn-outline-primary {% if days == 10 and not request.args.get('start_date') %}active{% endif %}">10일</a>
-        <a href="{{ url_for(endpoint, days=30, page=page) }}"
-            class="btn btn-sm btn-outline-primary {% if days == 30 and not request.args.get('start_date') %}active{% endif %}">30일</a>
+        {% for d in [5, 10, 30] %}
+        <a href="{{ url_for(endpoint, days=d, page=page, region=current_region) }}"
+            class="btn btn-sm btn-outline-primary {% if days == d and not request.args.get('start_date') %}active{% endif %}">{{ d }}일</a>
+        {% endfor %}
 
         <div class="btn-group" role="group">
             <button type="button"
@@ -17,6 +15,9 @@
             </button>
             <div class="dropdown-menu dropdown-menu-end p-2 shadow-sm" style="min-width: 200px;">
                 <form action="{{ url_for(endpoint) }}" method="GET">
+                    {% if current_region %}
+                    <input type="hidden" name="region" value="{{ current_region }}">
+                    {% endif %}
                     <div class="mb-2">
                         <label class="form-label small">시작일</label>
                         <input type="date" name="start_date" class="form-control form-control-sm" required

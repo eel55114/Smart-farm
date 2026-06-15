@@ -16,17 +16,20 @@
     <div class="col-md-6 mb-4">
         
         <!-- 좌상단(센서 현재값) -->
-        <div class="bg-light p-4 rounded shadow-sm mb-4">
-            <div id="sensor-container"
-                hx-get="/api/current_sensors" 
-                hx-trigger="load, every 1s" 
-                hx-swap="innerHTML">
-                {% include '_sensor_state.html' %}
+        <div class="content-card mb-4">
+            <h4 class="mb-3 text-primary border-bottom pb-2">센서 상태</h4>
+            <div class="scrollable-container overflow-y-auto overflow-x-hidden pe-2" style="max-height: 400px;">
+                <div id="sensor-container"
+                    hx-get="/api/current_sensors{% if current_region %}?region={{ current_region }}{% endif %}" 
+                    hx-trigger="load, every 1s" 
+                    hx-swap="innerHTML">
+                    {% include '_sensor_state.html' %}
+                </div>
             </div>
         </div>
 
         <!-- 좌하단(센서 그래프) -->
-        <div class="bg-light p-4 rounded shadow-sm">
+        <div class="content-card">
             {{ chart_viewer.render_charts('센서 그래프', request.endpoint, days, page, charts_data) }}
         </div>
 
@@ -36,7 +39,7 @@
     <div class="col-md-6 mb-4">
 
         {% set table_name = '센서 이력' %}
-        {{ logs_viewer.render_items(table_name, history_columns, history_data, page, has_next, endpoint=request.endpoint) }}
+        {{ logs_viewer.render_items(table_name, history_columns, history_data, page, has_next, endpoint=request.endpoint, count=count, per_page=per_page) }}
     </div>
 </div>
 {% endblock %}

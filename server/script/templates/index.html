@@ -16,9 +16,9 @@
     <div class="row">
         <!-- 상단 좌측() -->
         <div class="col-md-4 mb-4">
-            <div class="bg-light p-4 rounded shadow-sm mb-4 h-100">
+            <div class="content-card mb-4 h-100">
                 <div id="sensor-container"
-                    hx-get="/api/current_sensors" 
+                    hx-get="/api/current_sensors{% if current_region %}?region={{ current_region }}{% endif %}" 
                     hx-trigger="load, every 5s" 
                     hx-swap="innerHTML">
                     {% include '_sensor_state.html' %}
@@ -28,7 +28,7 @@
             
         <!-- 상단 중앙()-->
         <div class="col-md-4 mb-4">
-            <div class="bg-light p-4 rounded shadow-sm h-100">
+            <div class="content-card h-100">
                 <h4 class="mb-3 text-primary border-bottom pb-2">재배지 관리</h4>
                 
                 <div class="mb-3 rounded d-flex justify-content-between align-items-center bg-light px-3 py-2 shadow-sm">
@@ -44,10 +44,10 @@
         
         <!-- 상단 우측()-->
         <div class="col-md-4 mb-4">
-            <div class="bg-light p-4 rounded shadow-sm h-100">
+            <div class="content-card h-100">
                 <h4 class="mb-3 text-primary border-bottom pb-2">로봇 상태</h4>
                 <div class="scrollable-container overflow-y-auto overflow-x-hidden pe-2" style="max-height: 400px;">
-                    <div id="state-container" hx-get="/api/current_robot_state" hx-trigger="load, every 2s"
+                    <div id="state-container" hx-get="/api/current_robot_state{% if current_region %}?region={{ current_region }}{% endif %}" hx-trigger="load, every 2s"
                         hx-swap="innerHTML">
                         {% include '_robot_state.html' %}
                     </div>
@@ -61,7 +61,7 @@
         const lightSwitch = document.querySelector("#lightSwitch");
         lightSwitch.addEventListener("change", function() {
             const data = this.checked ? 1 : 0;
-            fetch(`/api/control_actuator?device=light&data={data}`);
+            fetch(`/api/control_actuator?device=light&data=${data}`);
         })
 
     </script>

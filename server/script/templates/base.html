@@ -8,12 +8,26 @@
     {{ bootstrap.load_css() }}
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
     <script src="https://unpkg.com/htmx.org@2.0.9"></script>
     <link
         href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
         rel="stylesheet" />
     <style>
+        #sidebar {
+            width: 250px;
+            background-color: #212529;
+            height: 100vh;
+            padding: 1rem;
+            position: sticky;
+            top: 0;
+            flex-shrink: 0;
+        }
         #sidebar .nav-link {
+            display: flex;
+            align-items: center;
+            color: #fff !important;
+            margin-bottom: 0.25rem;
             transition: background-color 0.2s ease, color 0.2s ease;
         }
         #sidebar .nav-link:hover {
@@ -21,7 +35,7 @@
         }
         #sidebar .nav-link.active {
             background-color: #0d6efd !important;
-            color: #fff !important;
+            font-weight: bold;
         }
         .submenu-link {
             padding: 0.4rem 1rem;
@@ -38,7 +52,7 @@
         .submenu-link.active-sub {
             color: #fff !important;
             font-weight: bold;
-            background-color: rgba(13, 110, 253, 0.2);
+            background-color: rgba(13, 110, 253, 0.35) !important;
         }
         .transition-transform {
             transition: transform 0.2s ease;
@@ -46,31 +60,67 @@
         .rotate-180 {
             transform: rotate(180deg);
         }
+        .content-card {
+            background-color: #f8f9fa;
+            padding: 1.5rem;
+            border-radius: 0.375rem;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        }
+        .capsule-badge {
+            background-color: #f0f1f2;
+            color: #495057;
+            font-size: 0.75rem;
+            padding: 0.15rem 0.5rem;
+            border-radius: 50rem;
+            border: 1px solid #dee2e6;
+            font-weight: 500;
+            display: inline-block;
+        }
+        .sensor-icon-lightbulb { color: oklch(0.6128 0.1169 81.72); }
+        .sensor-icon-water_drop { color: oklch(0.6128 0.1169 238.75); }
+        .sensor-icon-thermometer { color: oklch(0.6128 0.1169 38.99); }
+        .sensor-icon-local_fire_department { color: oklch(0.6128 0 38.99); }
+        .sensor-icon-potted_plant { color: oklch(0.6128 0.1169 137.27); }
     </style>
 </head>
 
 <body>
     <div class="d-flex">
-        <!-- 사이드바 영역 -->
-        <nav id="sidebar" class="bg-dark vh-100 p-3 sticky-top flex-shrink-0" style="width: 250px;">
+        <nav id="sidebar">
+            <!-- 지역 선택 드롭다운 -->
+            <div class="mb-3 px-1">
+                <label for="region-select" class="form-label text-white-50 small mb-1 d-flex align-items-center">
+                    <span class="material-symbols-outlined me-1 fs-6">location_on</span>
+                    재배 지역
+                </label>
+                <select id="region-select" class="form-select form-select-sm bg-dark text-white border-secondary" onchange="updateRegion(this.value)">
+                    <option value="">전체 지역</option>
+                    {% if regions %}
+                        {% for region in regions %}
+                            <option value="{{ region.id }}" {% if current_region == region.id %}selected{% endif %}>{{ region.name }}</option>
+                        {% endfor %}
+                    {% endif %}
+                </select>
+            </div>
+
             <ul class="nav nav-pills flex-column mt-4">
                 <li class="nav-item mb-1">
-                    <a href="/"
-                        class="nav-link d-flex align-items-center text-white {{ 'active fw-bold' if request.endpoint == 'index' }}">
+                    <a href="/{% if current_region %}?region={{ current_region }}{% endif %}"
+                        class="nav-link {{ 'active' if request.path == '/' }}">
                         <span class="material-symbols-outlined me-2">home</span>
                         홈
                     </a>
                 </li>
                 <li class="nav-item mb-1">
-                    <a href="/plants"
-                        class="nav-link d-flex align-items-center text-white {{ 'active fw-bold' if request.endpoint == 'plants' }}">
+                    <a href="/plants{% if current_region %}?region={{ current_region }}{% endif %}"
+                        class="nav-link {{ 'active' if request.path.startswith('/plants') }}">
                         <span class="material-symbols-outlined me-2">eco</span>
                         작물 현황
                     </a>
                 </li>
                 <li class="nav-item mb-1">
-                    <a href="/robot/schedule" 
-                        class="nav-link d-flex align-items-center justify-content-between text-white {{ 'active fw-bold' if request.path.startswith('/robot') }}">
+                    <a href="/robot/schedule{% if current_region %}?region={{ current_region }}{% endif %}" 
+                        class="nav-link justify-content-between {{ 'active' if request.path.startswith('/robot') }}">
                         <span class="d-flex align-items-center">
                             <span class="material-symbols-outlined me-2">smart_toy</span>
                             로봇 관리
@@ -80,20 +130,20 @@
                     <div class="collapse {{ 'show' if request.path.startswith('/robot') }}" id="robotSubmenu">
                         <ul class="nav flex-column ms-3 mt-1 small">
                             <li class="nav-item mb-1">
-                                <a href="/robot/schedule" 
-                                    class="submenu-link text-white-50 {{ 'active-sub' if request.path == '/robot/schedule' }}">
+                                <a href="/robot/schedule{% if current_region %}?region={{ current_region }}{% endif %}" 
+                                    class="submenu-link {{ 'text-white active-sub' if request.path == '/robot/schedule' else 'text-white-50' }}">
                                     일정 계획
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
-                                <a href="/robot/manual_control" 
-                                    class="submenu-link text-white-50 {{ 'active-sub' if request.path == '/robot/manual_control' }}">
+                                <a href="/robot/manual_control{% if current_region %}?region={{ current_region }}{% endif %}" 
+                                    class="submenu-link {{ 'text-white active-sub' if request.path == '/robot/manual_control' else 'text-white-50' }}">
                                     수동 제어
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
-                                <a href="/robot/settings" 
-                                    class="submenu-link text-white-50 {{ 'active-sub' if request.path == '/robot/settings' }}">
+                                <a href="/robot/settings{% if current_region %}?region={{ current_region }}{% endif %}" 
+                                    class="submenu-link {{ 'text-white active-sub' if request.path == '/robot/settings' else 'text-white-50' }}">
                                     설정값 변경
                                 </a>
                             </li>
@@ -101,8 +151,8 @@
                     </div>
                 </li>
                 <li class="nav-item mb-1">
-                    <a href="/environment"
-                        class="nav-link d-flex align-items-center text-white {{ 'active fw-bold' if request.endpoint == 'environment' }}">
+                    <a href="/environment{% if current_region %}?region={{ current_region }}{% endif %}"
+                        class="nav-link {{ 'active' if request.path.startswith('/environment') }}">
                         <span class="material-symbols-outlined me-2">sensors</span>
                         재배 환경
                     </a>
@@ -114,6 +164,19 @@
             {% block content %}{% endblock %}
         </main>
     </div>
+
+    <script>
+    function updateRegion(value) {
+        const url = new URL(window.location.href);
+        if (value) {
+            url.searchParams.set('region', value);
+        } else {
+            url.searchParams.delete('region');
+        }
+        // 페이지가 바뀔 수 있으므로 쿼리스트링만 유지한 채 페이지 리로드
+        window.location.href = url.pathname + url.search;
+    }
+    </script>
 
     <!-- Bootstrap JS 로드 -->
     {{ bootstrap.load_js() }}
