@@ -2,9 +2,244 @@
 {% block title %}로봇 설정값 변경{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <h1 class="display-5 mb-3">로봇 관리 - 설정값 변경</h1>
+<!-- 주행 알고리즘 정보 정의 -->
+{% set algorithms = [
+    {
+        'id': 'rpp',
+        'name': 'RPP',
+        'desc': 'RPP (Regulated Pure Pursuit): 목표까지 최단 경로에 가깝게 이동하는 표준적인 주행 방식입니다.'
+    },
+    {
+        'id': 'safe',
+        'name': 'SAFE',
+        'desc': 'SAFE (TEB, Timed Elastic Band): 장애물을 부드럽게 회피하는 주행 방식으로 장애물이 많거나 경로가 복잡한 장소에 적합합니다.'
+    },
+    {
+        'id': 'ack',
+        'name': 'ACK',
+        'desc': 'ACK (Ackermann Steering): 제자리 회전을 지양하는 주행 방식으로 후방 적치물이 많을 때 적합합니다.'
+    }
+] %}
+
+<!-- 상단 헤더 및 버튼 바 -->
+<div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
+    <h1 class="display-5 mb-0">로봇 관리 - 설정값 변경</h1>
+    
+    <!-- 조회 모드 버튼 바 -->
+    <div id="view-actions" class="d-flex gap-2">
+        <button id="btn-refresh" class="btn btn-secondary btn-sm fw-bold px-3 py-2 shadow-sm border-0">새로고침</button>
+        <button id="btn-edit" class="btn btn-primary btn-sm fw-bold px-3 py-2 shadow-sm border-0">편집</button>
+    </div>
+
+    <!-- 편집 모드 버튼 바 (초기 비활성화) -->
+    <div id="edit-actions" class="d-flex gap-2 d-none">
+        <button id="btn-cancel" class="btn btn-outline-danger btn-sm fw-bold px-3 py-2 shadow-sm border-0">취소</button>
+        <button id="btn-save" class="btn btn-success btn-sm fw-bold px-3 py-2 shadow-sm border-0">저장</button>
     </div>
 </div>
+
+<div class="row">
+    <div class="col-lg-10 mx-auto">
+        <form id="settings-form">
+            
+            <!-- 블록 1: 주행 알고리즘 선택 -->
+            <div class="content-card mb-4">
+                <h4 class="mb-3 text-primary border-bottom pb-2 d-flex align-items-center">주행 모드</h4>
+                <div class="d-flex gap-4 mt-2">
+                    {% for algo in algorithms %}
+                    <div class="form-check form-check-inline fs-5">
+                        <input class="form-check-input" type="radio" name="algorithm" id="algo-{{ algo.id }}" value="{{ algo.name }}" disabled>
+                        <label class="form-check-label fw-bold" for="algo-{{ algo.id }}">{{ algo.name }}</label>
+                        <span class="badge bg-secondary rounded-circle ms-1 align-middle" 
+                              style="cursor: help; font-size: 0.7rem; padding: 0.25em 0.45em;"
+                              data-bs-toggle="popover" 
+                              data-bs-trigger="hover focus" 
+                              data-bs-placement="top"
+                              data-bs-content="{{ algo.desc }}">?</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- 블록 2~4: RPP, SAFE, ACK 옵션 (Jinja 루프로 동적 렌더링) -->
+            {% for mode in ['rpp', 'safe', 'ack'] %}
+            <div class="content-card mb-4">
+                <h4 class="mb-3 text-primary border-bottom pb-2 d-flex align-items-center">{{ mode | upper }} 모드 세부 설정</h4>
+                <div class="row g-4">
+                    <div class="col-md-4">
+                        <label class="form-label d-flex justify-content-between align-items-center">
+                            <span>이동 속도</span>
+                            <span class="badge bg-secondary fs-6" id="{{ mode }}-speed-val">0.00 m/s</span>
+                        </label>
+                        <input type="range" class="form-range settings-slider" id="{{ mode }}-speed" min="0.08" max="0.24" step="0.02" disabled>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label d-flex justify-content-between align-items-center">
+                            <span>회전 속도</span>
+                            <span class="badge bg-secondary fs-6" id="{{ mode }}-rot-val">0.00 rad/s</span>
+                        </label>
+                        <input type="range" class="form-range settings-slider" id="{{ mode }}-rot" min="0.05" max="1.80" step="0.05" disabled>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label d-flex justify-content-between align-items-center">
+                            <span>장애물 인식 거리</span>
+                            <span class="badge bg-secondary fs-6" id="{{ mode }}-dist-val">0 cm</span>
+                        </label>
+                        <input type="range" class="form-range settings-slider" id="{{ mode }}-dist" min="0.05" max="1.0" step="0.05" disabled>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+
+        </form>
+    </div>
+</div>
+
+<script>
+    // Flask에서 전달한 설정 초기 값
+    const initialSettings = {{ settings | tojson }};
+
+    // 현재 저장되어 관리되는 상태값 (취소 시 원복용)
+    let currentSettings = JSON.parse(JSON.stringify(initialSettings));
+
+    // 공통 사용 변수
+    const modes = ['rpp', 'safe', 'ack'];
+    const elements = {};
+
+    // DOM 요소 캐싱 동적 처리 (슬라이더 관련)
+    modes.forEach(mode => {
+        elements[mode] = {
+            speed: document.getElementById(`${mode}-speed`),
+            rot: document.getElementById(`${mode}-rot`),
+            dist: document.getElementById(`${mode}-dist`),
+            speedVal: document.getElementById(`${mode}-speed-val`),
+            rotVal: document.getElementById(`${mode}-rot-val`),
+            distVal: document.getElementById(`${mode}-dist-val`)
+        };
+    });
+
+    // 화면 폼 데이터를 특정 객체 값으로 매핑 및 갱신하는 함수
+    function applySettingsToForm(settings) {
+        // 알고리즘 선택 라디오 활성화
+        const targetRadio = document.getElementById(`algo-${settings.algorithm.toLowerCase()}`);
+        if (targetRadio) {
+            targetRadio.checked = true;
+        }
+
+        // 슬라이더 값들 동적 적용
+        modes.forEach(mode => {
+            const config = settings[mode];
+            const el = elements[mode];
+            el.speed.value = config.speed;
+            el.rot.value = config.rotation_speed;
+            el.dist.value = config.obstacle_dist;
+        });
+
+        // 화면 텍스트(배지) 업데이트
+        updateValueDisplay();
+    }
+
+    // 슬라이더 값 옆에 수치 텍스트 실시간 반영
+    function updateValueDisplay() {
+        modes.forEach(mode => {
+            const el = elements[mode];
+            el.speedVal.innerText = parseFloat(el.speed.value).toFixed(2) + ' m/s';
+            el.rotVal.innerText = parseFloat(el.rot.value).toFixed(2) + ' rad/s';
+            el.distVal.innerText = Math.round(parseFloat(el.dist.value) * 100) + ' cm';
+        });
+    }
+
+    // 편집 모드 전환 토글
+    function toggleEditMode(isEdit) {
+        const viewActions = document.getElementById('view-actions');
+        const editActions = document.getElementById('edit-actions');
+        const inputs = document.querySelectorAll('#settings-form input');
+
+        if (isEdit) {
+            viewActions.classList.add('d-none');
+            editActions.classList.remove('d-none');
+            inputs.forEach(input => input.removeAttribute('disabled'));
+        } else {
+            editActions.classList.add('d-none');
+            viewActions.classList.remove('d-none');
+            inputs.forEach(input => input.setAttribute('disabled', 'true'));
+        }
+    }
+
+    // 이벤트 리스너 바인딩
+    document.addEventListener('DOMContentLoaded', () => {
+        // 최초 화면 초기화
+        applySettingsToForm(currentSettings);
+
+        // 슬라이더 조작 시 텍스트 즉시 변경 연계
+        const sliders = document.querySelectorAll('.settings-slider');
+        sliders.forEach(slider => {
+            slider.addEventListener('input', updateValueDisplay);
+        });
+
+        // 1) 편집 모드 진입
+        document.getElementById('btn-edit').addEventListener('click', () => {
+            toggleEditMode(true);
+        });
+
+        // 2) 편집 취소 (원복)
+        document.getElementById('btn-cancel').addEventListener('click', () => {
+            applySettingsToForm(currentSettings);
+            toggleEditMode(false);
+        });
+
+        // 3) 설정 새로고침 (페이지 재로드)
+        document.getElementById('btn-refresh').addEventListener('click', () => {
+            location.reload();
+        });
+
+        // 4) 설정 저장 및 Flask 서버 전송
+        document.getElementById('btn-save').addEventListener('click', () => {
+            const selectedAlgoElem = document.querySelector('input[name="algorithm"]:checked');
+            const selectedAlgo = selectedAlgoElem ? selectedAlgoElem.value : 'RPP';
+
+            // 입력 데이터 가공
+            const payload = {
+                algorithm: selectedAlgo
+            };
+
+            modes.forEach(mode => {
+                const el = elements[mode];
+                payload[mode] = {
+                    speed: parseFloat(el.speed.value),
+                    rotation_speed: parseFloat(el.rot.value),
+                    obstacle_dist: parseFloat(el.dist.value)
+                };
+            });
+
+            // Flask API로 전송
+            fetch('/api/robot_settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // 저장 성공 시, 현재 설정 로컬 복사본 갱신
+                    currentSettings = payload;
+                    alert('설정값이 정상적으로 저장되었습니다.');
+                    toggleEditMode(false);
+                } else {
+                    alert('설정 저장 중 오류가 발생했습니다: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Save error:', error);
+                alert('서버와 통신에 실패했습니다.');
+            });
+        });
+
+        // Bootstrap 5 Popover 초기화
+        const popoverTriggerList = document.querySelectorAll('[data-bs-toggle="popover"]');
+        const popoverList = [...popoverTriggerList].map(popoverTriggerEl => new bootstrap.Popover(popoverTriggerEl));
+    });
+</script>
 {% endblock %}
