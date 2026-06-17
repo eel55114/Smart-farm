@@ -1,0 +1,25 @@
+collision_monitor:
+  ros__parameters:
+    cmd_vel_in_topic: "/cmd_vel_raw"    # 사용자 코드가 발행하는 토픽
+    cmd_vel_out_topic: "/cmd_vel"       # 실제 로봇으로 나가는 토픽
+    state_publish_period: 0.1
+    transform_tolerance: 0.5
+    robot_radius: 0.2
+    
+    # 장애물 감지 설정
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "/scan"
+      max_obstacle_height: 2.0
+      clearing: True
+      marking: True
+      
+    # 안전 구역 (이 구역 안에 장애물이 들어오면 감속/정지)
+    # 아래는 로봇 반경 기준 설정 예시
+    polygons: ["polygon"]
+    polygon:
+      type: "polygon"
+      points: [0.3, 0.2, 0.3, -0.2, -0.1, -0.2, -0.1, 0.2] # 로봇 앞쪽 다각형 영역
+      action_type: "stop" # 장애물 감지 시 "stop" (정지) 또는 "slowdown" (감속)
+      min_points: 3
