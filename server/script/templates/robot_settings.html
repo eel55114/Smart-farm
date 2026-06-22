@@ -23,7 +23,10 @@
 
 <!-- 상단 헤더 및 버튼 바 -->
 <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
-    <h1 class="display-5 mb-0">로봇 관리 - 설정값 변경</h1>
+    <div class="d-flex align-items-center gap-3">
+        {% include '_robot_selector.html' %}
+        <h1 class="display-5 mb-0">설정값 변경</h1>
+    </div>
     
     <!-- 조회 모드 버튼 바 -->
     <div id="view-actions" class="d-flex gap-2">
@@ -213,7 +216,7 @@
             });
 
             // Flask API로 전송
-            fetch('/api/robot_settings', {
+            fetch(`/api/robot_settings?robot={{ current_robot if current_robot else 'null' }}`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

@@ -85,6 +85,19 @@
 </head>
 
 <body>
+    {% set ns = namespace(region_params='', robot_params='') %}
+    {% if current_region %}
+      {% set ns.region_params = '?region=' ~ current_region %}
+    {% endif %}
+
+    {% if current_region and current_robot %}
+      {% set ns.robot_params = '?region=' ~ current_region ~ '&robot=' ~ current_robot %}
+    {% elif current_region %}
+      {% set ns.robot_params = '?region=' ~ current_region %}
+    {% elif current_robot %}
+      {% set ns.robot_params = '?robot=' ~ current_robot %}
+    {% endif %}
+
     <div class="d-flex">
         <nav id="sidebar">
             <!-- 지역 선택 드롭다운 -->
@@ -105,21 +118,21 @@
 
             <ul class="nav nav-pills flex-column mt-4">
                 <li class="nav-item mb-1">
-                    <a href="/{% if current_region %}?region={{ current_region }}{% endif %}"
+                    <a href="/{{ ns.region_params }}"
                         class="nav-link {{ 'active' if request.path == '/' }}">
                         <span class="material-symbols-outlined me-2">home</span>
                         홈
                     </a>
                 </li>
                 <li class="nav-item mb-1">
-                    <a href="/plants{% if current_region %}?region={{ current_region }}{% endif %}"
+                    <a href="/plants{{ ns.region_params }}"
                         class="nav-link {{ 'active' if request.path.startswith('/plants') }}">
                         <span class="material-symbols-outlined me-2">eco</span>
                         작물 현황
                     </a>
                 </li>
                 <li class="nav-item mb-1">
-                    <a href="/robot/schedule{% if current_region %}?region={{ current_region }}{% endif %}" 
+                    <a href="/robot/schedule{{ ns.robot_params }}" 
                         class="nav-link justify-content-between {{ 'active' if request.path.startswith('/robot') }}">
                         <span class="d-flex align-items-center">
                             <span class="material-symbols-outlined me-2">smart_toy</span>
@@ -130,19 +143,19 @@
                     <div class="collapse {{ 'show' if request.path.startswith('/robot') }}" id="robotSubmenu">
                         <ul class="nav flex-column ms-3 mt-1 small">
                             <li class="nav-item mb-1">
-                                <a href="/robot/schedule{% if current_region %}?region={{ current_region }}{% endif %}" 
+                                <a href="/robot/schedule{{ ns.robot_params }}" 
                                     class="submenu-link {{ 'text-white active-sub' if request.path == '/robot/schedule' else 'text-white-50' }}">
                                     일정 계획
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
-                                <a href="/robot/manual_control{% if current_region %}?region={{ current_region }}{% endif %}" 
+                                <a href="/robot/manual_control{{ ns.robot_params }}" 
                                     class="submenu-link {{ 'text-white active-sub' if request.path == '/robot/manual_control' else 'text-white-50' }}">
                                     수동 제어
                                 </a>
                             </li>
                             <li class="nav-item mb-1">
-                                <a href="/robot/settings{% if current_region %}?region={{ current_region }}{% endif %}" 
+                                <a href="/robot/settings{{ ns.robot_params }}" 
                                     class="submenu-link {{ 'text-white active-sub' if request.path == '/robot/settings' else 'text-white-50' }}">
                                     설정값 변경
                                 </a>
@@ -151,7 +164,7 @@
                     </div>
                 </li>
                 <li class="nav-item mb-1">
-                    <a href="/environment{% if current_region %}?region={{ current_region }}{% endif %}"
+                    <a href="/environment{{ ns.region_params }}"
                         class="nav-link {{ 'active' if request.path.startswith('/environment') }}">
                         <span class="material-symbols-outlined me-2">sensors</span>
                         재배 환경
@@ -173,7 +186,17 @@
         } else {
             url.searchParams.delete('region');
         }
-        // 페이지가 바뀔 수 있으므로 쿼리스트링만 유지한 채 페이지 리로드
+        url.searchParams.delete('robot'); // 리전 변경 시 기존 선택된 로봇 정보 삭제
+        window.location.href = url.pathname + url.search;
+    }
+
+    function updateRobot(value) {
+        const url = new URL(window.location.href);
+        if (value) {
+            url.searchParams.set('robot', value);
+        } else {
+            url.searchParams.delete('robot');
+        }
         window.location.href = url.pathname + url.search;
     }
     </script>

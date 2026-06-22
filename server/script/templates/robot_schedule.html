@@ -2,9 +2,8 @@
 {% block title %}로봇 일정 계획{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12">
-        <h1 class="display-5 mb-3">로봇 관리 - 일정 계획</h1>
-    </div>
+<div class="d-flex align-items-center gap-3 mb-4 border-bottom pb-3">
+    {% include '_robot_selector.html' %}
+    <h1 class="display-5 mb-0">일정 계획</h1>
 </div>
 {% endblock %}

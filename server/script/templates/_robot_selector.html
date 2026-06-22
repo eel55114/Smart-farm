@@ -1,0 +1,18 @@
+<div class="card shadow-sm border border-secondary-subtle p-2 bg-white d-inline-block">
+    <div class="d-flex align-items-center gap-2">
+        <label for="robot-select" class="form-label fw-bold text-dark mb-0 d-flex align-items-center fs-6" style="white-space: nowrap;">
+            로봇:
+        </label>
+        <select id="robot-select" class="form-select form-select-sm fw-bold text-primary border-primary-subtle" style="min-width: 145px; cursor: pointer;" onchange="updateRobot(this.value)">
+            {% if robots %}
+                {% for robot in robots %}
+                    {% if not current_region or robot.region_id == current_region %}
+                        <option value="{{ robot.id }}" {% if current_robot == robot.id %}selected{% endif %}>
+                            {{ robot.name }}
+                        </option>
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+        </select>
+    </div>
+</div>

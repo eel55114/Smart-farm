@@ -2,7 +2,10 @@
 {% block title %}로봇 수동 제어{% endblock %}
 
 {% block content %}
-<h1 class="display-5 mb-3">로봇 관리 - 수동 제어</h1>
+<div class="d-flex align-items-center gap-3 mb-4 border-bottom pb-3">
+    {% include '_robot_selector.html' %}
+    <h1 class="display-5 mb-0">수동 제어</h1>
+</div>
 {% if connection_error %}
 <div class="alert alert-danger alert-dismissible fade show" role="alert">
     <strong>오류:</strong> {{ error_target }}에 접속할 수 없습니다. 잠시 후에 다시 시도해 주세요.
@@ -108,7 +111,7 @@
 
                 <!-- 상태 표시창 -->
                 <div class="col-5">
-                    <div id="state-container" hx-get="/api/current_robot_state{% if current_region %}?region={{ current_region }}{% endif %}" hx-trigger="load, every 1s"
+                    <div id="state-container" hx-get="/api/current_robot_state{% if current_region or current_robot %}?{% if current_region %}region={{ current_region }}{% if current_robot %}&{% endif %}{% endif %}{% if current_robot %}robot={{ current_robot }}{% endif %}{% endif %}" hx-trigger="load, every 1s"
                         hx-swap="innerHTML">
                         {% include '_robot_state.html' %}
                     </div>
@@ -282,13 +285,13 @@
                             dpadControl.classList.remove("opacity-50", "pe-none");
                             manualLabel.classList.add("text-primary");
                             autoLabel.classList.remove("text-primary");
-                            fetch(`/api/change_robot_state?is_manual=1`);
+                            fetch(`/api/change_robot_state?is_manual=1&robot={{ current_robot if current_robot else 'null' }}`);
                         } else {
                             // 자동 모드
                             dpadControl.classList.add("opacity-50", "pe-none");
                             autoLabel.classList.add("text-primary");
                             manualLabel.classList.remove("text-primary");
-                            fetch(`/api/change_robot_state?is_manual=0`);
+                            fetch(`/api/change_robot_state?is_manual=0&robot={{ current_robot if current_robot else 'null' }}`);
                         }
                     });
                 }
@@ -298,7 +301,7 @@
                 controlBtns.forEach(btn => {
                     btn.addEventListener("click", function () {
                         const data = this.getAttribute('data-info');
-                        fetch(`/api/control_robot?direction=${data}`);
+                        fetch(`/api/control_robot?direction=${data}&robot={{ current_robot if current_robot else 'null' }}`);
                     });
                 });
 
@@ -440,7 +443,7 @@
                         headers: {
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ x: mx, y: my })
+                        body: JSON.stringify({ x: mx, y: my, robot: {{ current_robot if current_robot else 'null' }} })
                     })
                     .then(res => res.json())
                     .then(data => {})
