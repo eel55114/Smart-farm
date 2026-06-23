@@ -13,7 +13,7 @@ from db_manager.manager import DBManager
 
 
 class Connector:
-    def __init__(self) -> None:
+    def __init__(self, on_live_data=None) -> None:
         dotenv.load_dotenv()
 
         mqtt_host = os.getenv("MQTT_HOST")
@@ -39,6 +39,7 @@ class Connector:
 
         self._is_running = False
         self._db_thread = None
+        self.on_live_data = on_live_data
 
     def on_connect(self, client, userdata, flags, reason_code, properties):
         print(f"Connected with result code {reason_code}")
@@ -97,21 +98,42 @@ class Connector:
     def on_robot_data(self, client, userdata, msg):
         topic = msg.topic.split("/")
         # region_id = topic[1]
-        robot_id = topic[4]
+        robot_id = int(topic[4])
         msg_type = topic[5]
 
         if msg_type == "state":
-            payload = json.loads(msg.payload)
-            dt = datetime.fromtimestamp(payload["time"]) if "time" in payload else None
+            try:
+                payload = json.loads(msg.payload.decode("utf-8"))
+                dt = datetime.fromtimestamp(payload["time"]) if "time" in payload else None
 
-            data = datatype.Robot(
-                id=int(robot_id),
-                state=payload["state"],
-                last_signal=dt,  # type: ignore
-            )
+                data = datatype.Robot(
+                    id=robot_id,
+                    state=payload["state"],
+                    last_signal=dt,  # type: ignore
+                )
 
-            self.queue.put(data)
-        # elif msg_type == "map":
+                self.queue.put(data)
+            except Exception as e:
+                print(f"State 수신 처리 오류: {e}")
+        elif msg_type in ["battery_state", "amcl_pose", "robot_mode"]:
+            if self.on_live_data:
+                try:
+                    payload = json.loads(msg.payload.decode("utf-8"))
+                    self.on_live_data(robot_id, {
+                        "type": msg_type,
+                        "payload": payload
+                    })
+                except Exception as e:
+                    print(f"텔레메트리 {msg_type} 릴레이 실패: {e}")
+
+    def publish(self, topic: str, payload: dict, qos=1, retain=False):
+        try:
+            payload_str = json.dumps(payload)
+            result = self.mqttc.publish(topic, payload_str, qos=qos, retain=retain)
+            return result.rc == 0
+        except Exception as e:
+            print(f"MQTT Publish Error: {e}")
+            return False
 
     def _db_loop(self):
         TIMEOUT = 3

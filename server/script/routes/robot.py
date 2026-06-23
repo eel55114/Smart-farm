@@ -2,7 +2,7 @@ import json
 import pathlib
 
 from db_instance import db
-from flask import Blueprint, redirect, render_template, request
+from flask import Blueprint, redirect, render_template, request, current_app
 
 robot_bp = Blueprint("robot", __name__)
 
@@ -137,6 +137,7 @@ def change_robot_state() -> tuple[str, int]:
 def control_robot() -> tuple[str, int]:
     direction = request.args.get("direction", "stop", type=str)
     robot_id = request.args.get("robot", type=int)
+    region_id = request.args.get("region", type=int)
     print(f"[Control Robot] Robot ID={robot_id}, Direction={direction}")
 
     data = ""
@@ -154,8 +155,20 @@ def control_robot() -> tuple[str, int]:
         elif direction == "Stop":
             data = "s"
 
-    pass
-    # todo
+    if robot_id is not None:
+        if region_id is None:
+            robots_found, _ = db.get_current_robot(robot_ids=[robot_id])
+            if robots_found:
+                region_id = robots_found[0].region_id
+        if region_id is None:
+            region_id = 1
+
+        connector = current_app.config.get('MQTT_CONNECTOR')
+        if connector and data:
+            # MQTT_SPEC.md 규격: smartfarm/{region_id}/robot/command/{robot_id}/remote_control
+            topic = f"smartfarm/{region_id}/robot/command/{robot_id}/remote_control"
+            # MQTT_SPEC.md 규격: {"data": data}
+            connector.publish(topic, {"data": data})
 
     return "", 200
 
