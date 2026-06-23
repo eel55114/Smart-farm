@@ -16,7 +16,7 @@ class MapManagerNode(Node):
 
         # 💡 오직 이 파일관리 노드만 경로를 가집니다! (본인 계정명 확인)
         self.map_dir = "/home/kim/remote_ws/src/turtlebot3_remote/map"
-"
+
 
         # 1. 대시보드에게 "현재 가지고 있는 맵 목록"을 던져줄 발행자
         self.map_list_pub = self.create_publisher(String, "/map_list", 10)

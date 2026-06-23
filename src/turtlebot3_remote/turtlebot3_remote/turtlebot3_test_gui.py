@@ -306,6 +306,9 @@ class GuiDashboardTk:
         self.btn_mode_auto.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=1)
         self.btn_mode_manual = tk.Button(btn_mode_frame, text="MANUAL", bg="gray", fg="white", command=lambda: self.switch_drive_mode("MANUAL"))
         self.btn_mode_manual.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=1)
+
+        self.btn_mode_follow = tk.Button(btn_mode_frame, text="FOLLOW", bg="purple", fg="white", command=lambda: self.switch_drive_mode("FOLLOW"))
+        self.btn_mode_follow.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=1)
         
         self.ctrl_combo = ttk.Combobox(ctrl_frame, values=["RPP", "SAFE", "ACK"], state="readonly")
         self.ctrl_combo.set("RPP")
@@ -496,18 +499,22 @@ class GuiDashboardTk:
     # ---------------------------------------------
     def switch_drive_mode(self, mode):
         self.drive_mode = mode
+        # 버튼 색상 초기화
+        self.btn_mode_auto.config(bg="gray")
+        self.btn_mode_manual.config(bg="gray")
+        self.btn_mode_follow.config(bg="gray") # 추가한 버튼
+
+        # 선택된 모드만 색상 변경
         if mode == "AUTO":
             self.btn_mode_auto.config(bg="green")
-            self.btn_mode_manual.config(bg="gray")
-        else:
-            self.btn_mode_auto.config(bg="gray")
+        elif mode == "MANUAL":
             self.btn_mode_manual.config(bg="red")
-            
             if self.ros_node:
                 self.ros_node.waypoint_queue.clear()
                 self.ros_node.current_goal = None
-                # 🌟 [수정] 매뉴얼 모드로 전환되거나 정지 명령 시 Nav2 액션 취소
                 self.ros_node.cancel_nav_goal() 
+        elif mode == "FOLLOW":
+            self.btn_mode_follow.config(bg="purple") # Follow 모드 색상
         
         if self.ros_node: self.ros_node.publish_mode(mode)
         
@@ -633,9 +640,11 @@ class GuiDashboardTk:
         except: messagebox.showwarning("경고", "지도를 선택하세요")
 
     def update_map_list_ui(self, map_names):
+        print(f"DEBUG: 전달받은 맵 리스트: {map_names}") # 이게 찍히는지 보세요!
         if not self.root.winfo_exists(): return
         self.map_listbox.delete(0, tk.END)
-        for name in map_names: self.map_listbox.insert(tk.END, name)
+        for name in map_names: 
+            self.map_listbox.insert(tk.END, name)
 
     def append_log(self, text, color=None):
         if not self.root.winfo_exists(): return

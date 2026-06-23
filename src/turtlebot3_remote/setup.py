@@ -43,6 +43,9 @@ setup(
             'turtlebot3_remote = turtlebot3_remote.turtlebot3_remote:main',
             'turtlebot3_map_publish = turtlebot3_remote.turtlebot3_map_publish:main',
             'turtlebot3_test_gui = turtlebot3_remote.turtlebot3_test_gui:main',
+            'robot_data_preprocessor = turtlebot3_remote.robot_data_preprocessor:main',
+            'turtlebot3_main = turtlebot3_remote.turtlebot3_main:main',
+            'turtlebot3_human_publisher = turtlebot3_remote.turtlebot3_human_publisher:main',
         ],
     },
 )

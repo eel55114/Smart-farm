@@ -1,6 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+
+# ROS 2 build
 build/
 install/
 log/
-.colcon/
-.git/
-*/.git/
+
+# System/Temp
+*.gv
+*.pdf
+.vscode/
