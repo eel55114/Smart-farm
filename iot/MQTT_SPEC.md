@@ -51,10 +51,12 @@ IoT 허브 -> 서버
 #### 2-1-1. 로봇 상태
 <-로봇
 - 토픽명: `smartfarm/{region_id}/robot/telemetry/{robot_id}/state`
-#### 2-1-2. 모드
+
+#### 2-1-2. 동작 모드
 <-로봇<-
 - 토픽명: `smartfarm/{region_id}/robot/command/{robot_id}/robot_mode`
-#### 2-1. 지도 선택
+
+#### 2-1-3. 지도 선택
 파이<-
 - 토픽명: `smartfarm/{region_id}/robot/command/{robot_id}/set_map`
 - 페이로드: json string {
@@ -66,7 +68,7 @@ IoT 허브 -> 서버
 name, hash가 일치하면 저장된 파일을 기반으로 ROS /map (nav_msgs/OccupancyGrid) 발행
 name, hash가 일치하지 않으면 지도 요청 토픽 발행
 
-### 2-2. 지도 요청
+### 2-1-4. 지도 요청
 <-파이
 - 토픽명: `smartfarm/{region_id}/robot/telemetry/{robot_id}/get_map`
 - 페이로드: json string {
@@ -75,7 +77,7 @@ name, hash가 일치하지 않으면 지도 요청 토픽 발행
     "inform": (bool) yaml request,
 }
 
-### 2-3. 지도 데이터
+### 2-1-5. 지도 데이터
 파이<-
 - 토픽명: `smartfarm/{region_id}/robot/command/{robot_id}/map_data`
 - 페이로드: json string {
@@ -86,3 +88,5 @@ name, hash가 일치하지 않으면 지도 요청 토픽 발행
 
 name, hash가 일치하면 저장된 파일을 기반으로 ROS /map (nav_msgs/OccupancyGrid) 발행
 name, hash가 일치하지 않으면 지도 요청 토픽 발행
+
+### 2-1-6. 

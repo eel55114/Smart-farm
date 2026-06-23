@@ -7,13 +7,13 @@ from datetime import datetime
 
 import dotenv
 import paho.mqtt.client as mqtt
-from paho.mqtt.enums import CallbackAPIVersion
 from db_manager import datatype
 from db_manager.manager import DBManager
+from paho.mqtt.enums import CallbackAPIVersion
 
 
 class Connector:
-    def __init__(self, on_live_data=None) -> None:
+    def __init__(self, on_robot_ephemeral_data=None) -> None:
         dotenv.load_dotenv()
 
         mqtt_host = os.getenv("MQTT_HOST")
@@ -39,7 +39,7 @@ class Connector:
 
         self._is_running = False
         self._db_thread = None
-        self.on_live_data = on_live_data
+        self.on_robot_ephemeral_data = on_robot_ephemeral_data
 
     def on_connect(self, client, userdata, flags, reason_code, properties):
         print(f"Connected with result code {reason_code}")
@@ -104,7 +104,11 @@ class Connector:
         if msg_type == "state":
             try:
                 payload = json.loads(msg.payload.decode("utf-8"))
-                dt = datetime.fromtimestamp(payload["time"]) if "time" in payload else None
+                dt = (
+                    datetime.fromtimestamp(payload["time"])
+                    if "time" in payload
+                    else None
+                )
 
                 data = datatype.Robot(
                     id=robot_id,
@@ -116,13 +120,12 @@ class Connector:
             except Exception as e:
                 print(f"State 수신 처리 오류: {e}")
         elif msg_type in ["battery_state", "amcl_pose", "robot_mode"]:
-            if self.on_live_data:
+            if self.on_robot_ephemeral_data:
                 try:
                     payload = json.loads(msg.payload.decode("utf-8"))
-                    self.on_live_data(robot_id, {
-                        "type": msg_type,
-                        "payload": payload
-                    })
+                    self.on_robot_ephemeral_data(
+                        robot_id, {"type": msg_type, "payload": payload}
+                    )
                 except Exception as e:
                     print(f"텔레메트리 {msg_type} 릴레이 실패: {e}")
 
@@ -162,15 +165,15 @@ class Connector:
                 if len(sensors):
                     err = self.db.update_sensor(sensors)
                     if err:
-                        print("센서 업데이트 중 오류 발생:", err)
+                        print("센서 DB 업데이트 중 오류 발생:", err)
                 if len(actuators):
                     err = self.db.update_actuator(actuators)
                     if err:
-                        print("액추에이터 업데이트 중 오류 발생:", err)
+                        print("액추에이터 DB 업데이트 중 오류 발생:", err)
                 if len(robots):
                     err = self.db.update_robot(robots)
                     if err:
-                        print("로봇 업데이트 중 오류 발생:", err)
+                        print("로봇 DB 업데이트 중 오류 발생:", err)
 
     def run(self):
         self._is_running = True

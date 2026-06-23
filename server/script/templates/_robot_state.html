@@ -7,7 +7,8 @@
         </div>
     </div>
     <div class="mb-3 rounded d-flex justify-content-between align-items-center bg-light px-3 py-2 shadow-sm">
-        <span class="fs-6">현재 상태</span>{% if not current_state %}
+        <span class="fs-6">현재 상태</span>
+        {% if not current_state %}
         {% set current_state = '-' %}
         {% endif %}
         <span class="fs-5 fw-bold text-primary">{{ current_state }}</span>
