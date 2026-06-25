@@ -3,9 +3,11 @@
 - 공통: `smartfarm/{region_id}//`
 - IoT 장비: `.../iot/`
 - Turtlebot: `.../robot/`
+- 작물: `.../plant/`
 
 - 메시지 발신: `.../.../telemetry`
 - 메시지 수신: `.../.../command`
+- 이미지 토픽: `.../.../img`
 
 
 # 2. IoT
@@ -89,4 +91,11 @@ name, hash가 일치하지 않으면 지도 요청 토픽 발행
 name, hash가 일치하면 저장된 파일을 기반으로 ROS /map (nav_msgs/OccupancyGrid) 발행
 name, hash가 일치하지 않으면 지도 요청 토픽 발행
 
-### 2-1-6. 
+### 2-1-6. 작물 이미지 데이터
+<-파이
+- 토픽명: `smartfarm/{region_id}/plant/img/captured_img`
+- 페이로드: json string {
+    "id": (int) plant ID,
+    "time": (int) timestamp,
+    "img": (string) plant image encoded by BASE64,
+}

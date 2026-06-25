@@ -2,6 +2,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Final
@@ -14,6 +15,7 @@ from nav_msgs.msg import OccupancyGrid
 from paho.mqtt.enums import CallbackAPIVersion
 from rclpy.node import Node
 from rosidl_runtime_py.set_message import set_message_fields
+from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String
 
 
@@ -77,6 +79,7 @@ class Connector(Node):
         self.TOPIC_PREFIX: Final = {
             "robot_telemetry": f"smartfarm/{self.REGION_ID}/robot/telemetry/{robot_id}/",
             "robot_command": f"smartfarm/{self.REGION_ID}/robot/command/{robot_id}/",
+            "plant_img": f"smartfarm/{self.REGION_ID}/plant/img/",
         }
 
         if map_dir_path == "":
@@ -101,6 +104,30 @@ class Connector(Node):
             String, "/robot_state", self.robot_state_callback, 10
         )
 
+        self.captured_sub = self.create_subscription(
+            CompressedImage, "/captured_image/compressed", self.plant_img_callback, 1
+        )
+
+    def plant_img_callback(self, msg: CompressedImage) -> None:
+        """ROS로부터 촬영한 작물 이미지를
+
+        수신된 상태 데이터를 MQTT 브로커의 'state' 토픽으로 발행
+
+        Args:
+            msg: 로봇의 현재 상태 정보를 담고 있는 ROS CompressedImage 메시지 객체.
+        """
+
+        frame_id_str = msg.header.frame_id
+        match = re.search(r"Marker ID:\s*(\d+)", frame_id_str)
+        marker_id = int(match.group(1)) if match else 1
+
+        now = time.time()
+
+        topic = self.TOPIC_PREFIX["plant_img"]
+        self.mqtt.publish(topic, msg.data)
+
+        self.get_logger().info(f"Marker {marker_id} 이미지 송신")
+
     def robot_state_callback(self, msg: String) -> None:
         """ROS로부터 로봇 상태 텔레메트리를 수신했을 때 호출되는 콜백 메서드
 
@@ -111,7 +138,7 @@ class Connector(Node):
         """
         topic = self.TOPIC_PREFIX["robot_telemetry"] + "state"
         self.mqtt.publish(topic, msg.data)
-        # self.get_logger().info(f"ROS -> MQTT: {msg.data}")
+        self.get_logger().info(f"로봇 상태 전송: {msg.data}")
 
     def on_connect(self, client, userdata, flags, reason_code, properties) -> None:
         """MQTT 클라이언트가 브로커에 연결되었을 때 호출되는 콜백 메서드.
@@ -167,6 +194,8 @@ class Connector(Node):
             self.get_logger().error(e)
             return
 
+        self.get_logger().info(f"맵 설정 명령 수신: {map_name}")
+
         img_file = (self.map_dir_path / map_name).with_suffix(".pgm")
         inform_file = (self.map_dir_path / map_name).with_suffix(".yaml")
 
@@ -183,6 +212,7 @@ class Connector(Node):
             if img_hash == img_file_hash and inform_hash == inform_file_hash:
                 mtime = int(max(img_file.stat().st_mtime, inform_file.stat().st_mtime))
                 self.publish_map(map_name, mtime, img_file_data, inform_file_data)
+                self.get_logger().info(f"맵 설정 완료: {map_name}")
                 return
 
             else:
@@ -192,6 +222,8 @@ class Connector(Node):
         msg = msg_packer(name=map_name, img=request_img, inform=request_inform)
 
         client.publish(self.TOPIC_PREFIX["robot_telemetry"] + "get_map", msg)
+
+        self.get_logger().info(f"맵 데이터 전송 요청: {map_name}")
 
     def publish_map(
         self, name: str, mtime: int, img: bytes, inform: str | bytes
