@@ -1,4 +1,5 @@
 import json
+import math
 import pathlib
 
 from db_instance import db
@@ -22,9 +23,9 @@ def robot_settings():
     # 플레이스홀더 고정 설정 데이터 반환 (신규 규격 반영)
     default_settings = {
         "algorithm": "RPP",
-        "rpp": {"speed": 0.12, "rotation_speed": 0.50, "obstacle_dist": 0.80},
-        "safe": {"speed": 0.10, "rotation_speed": 0.30, "obstacle_dist": 0.60},
-        "ack": {"speed": 0.16, "rotation_speed": 0.80, "obstacle_dist": 0.50},
+        "rpp":  {"speed": 0.12, "goal_tolerance": 0.10, "obstacle_dist": 0.80},
+        "safe": {"speed": 0.10, "goal_tolerance": 0.10, "obstacle_dist": 0.60},
+        "ack":  {"speed": 0.16, "goal_tolerance": 0.10, "obstacle_dist": 0.50},
     }
     return render_template("robot_settings.html", settings=default_settings)
 
@@ -36,6 +37,39 @@ def save_robot_settings():
     print(
         f"[Robot Settings Save] Robot ID={robot_id} - Received config parameters: {data}"
     )
+
+    if robot_id is not None:
+        # region_id 조회
+        region_id = None
+        robots_found, _ = db.get_current_robot(robot_ids=[robot_id])
+        if robots_found:
+            region_id = robots_found[0].region_id
+        if region_id is None:
+            region_id = 1
+
+        connector = current_app.config.get("MQTT_CONNECTOR")
+        if connector:
+            # 브라우저 payload 키 → ROS /publish_param 규격으로 변환
+            # goal_tolerance → tolerance, obstacle_dist → inflation
+            # mode 키(rpp/safe/ack) → 대문자 콘트롤러명(RPP/SAFE/ACK)
+            mode_map = {"rpp": "RPP", "safe": "SAFE", "ack": "ACK"}
+            controllers = {}
+            for mode_lower, mode_upper in mode_map.items():
+                cfg = data.get(mode_lower, {})
+                controllers[mode_upper] = {
+                    "speed":     cfg.get("speed", 0.0),
+                    "tolerance": cfg.get("goal_tolerance", 0.0),
+                    "inflation": cfg.get("obstacle_dist", 0.0),
+                }
+
+            ros_payload = {
+                "controllers":         controllers,
+                "current_controller":  data.get("algorithm", "RPP"),
+            }
+
+            topic = f"smartfarm/{region_id}/robot/command/{robot_id}/publish_param"
+            connector.publish(topic, ros_payload)
+
     return {"status": "success", "message": "Settings saved successfully"}, 200
 
 
@@ -210,4 +244,63 @@ def robot_moveto():
     print(
         f"[Robot MoveTo] Robot ID={robot_id} - Requested movement to physical coordinates: x={x}, y={y}"
     )
+
+    if robot_id is not None and x is not None and y is not None:
+        region_id = None
+        robots_found, _ = db.get_current_robot(robot_ids=[robot_id])
+        if robots_found:
+            region_id = robots_found[0].region_id
+        if region_id is None:
+            region_id = 1
+
+        connector = current_app.config.get("MQTT_CONNECTOR")
+        if connector:
+            topic = f"smartfarm/{region_id}/robot/command/{robot_id}/goal_pose"
+            payload = {
+                "x": x,
+                "y": y,
+                "z": 0.0,
+                "qx": 0.0,
+                "qy": 0.0,
+                "qz": 0.0,
+                "qw": 1.0,
+            }
+            connector.publish(topic, payload)
+
     return {"status": "success", "message": f"Moving to ({x}, {y})"}, 200
+
+
+@robot_bp.route("/api/robot_set_initial_pose", methods=["POST"])
+def robot_set_initial_pose():
+    data = request.get_json() or {}
+    robot_id = data.get("robot") or request.args.get("robot", type=int)
+    x = data.get("x")
+    y = data.get("y")
+    yaw = data.get("yaw")  # radians
+    print(
+        f"[Robot SetInitialPose] Robot ID={robot_id} - x={x}, y={y}, yaw={yaw}"
+    )
+
+    if robot_id is not None and x is not None and y is not None and yaw is not None:
+        region_id = None
+        robots_found, _ = db.get_current_robot(robot_ids=[robot_id])
+        if robots_found:
+            region_id = robots_found[0].region_id
+        if region_id is None:
+            region_id = 1
+
+        connector = current_app.config.get("MQTT_CONNECTOR")
+        if connector:
+            topic = f"smartfarm/{region_id}/robot/command/{robot_id}/initial_pose"
+            payload = {
+                "x": x,
+                "y": y,
+                "z": 0.0,
+                "qx": 0.0,
+                "qy": 0.0,
+                "qz": math.sin(yaw / 2),
+                "qw": math.cos(yaw / 2),
+            }
+            connector.publish(topic, payload)
+
+    return {"status": "success", "message": f"Initial pose set at ({x}, {y}), yaw={yaw}"}, 200

@@ -11,6 +11,7 @@ import dotenv
 import map_converter
 import paho.mqtt.client as mqtt
 import rclpy
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from nav_msgs.msg import OccupancyGrid
 from paho.mqtt.enums import CallbackAPIVersion
 from rclpy.node import Node
@@ -108,13 +109,31 @@ class Connector(Node):
             CompressedImage, "/captured_image/compressed", self.plant_img_callback, 1
         )
 
-    def plant_img_callback(self, msg: CompressedImage) -> None:
-        """ROS로부터 촬영한 작물 이미지를
+        # /amcl_pose 수신 -> MQTT 발신
+        self.amcl_pose_sub = self.create_subscription(
+            PoseWithCovarianceStamped, "/amcl_pose", self.amcl_pose_callback, 10
+        )
 
-        수신된 상태 데이터를 MQTT 브로커의 'state' 토픽으로 발행
+        # /initialpose 발행 퍼블리셔
+        self.initial_pose_pub = self.create_publisher(
+            PoseWithCovarianceStamped, "/initialpose", 10
+        )
+
+        # /goal_pose 발행 퍼블리셔
+        self.goal_pose_pub = self.create_publisher(
+            PoseStamped, "/goal_pose", 10
+        )
+
+        # /publish_param 발행 퍼블리셔 (주행 파라미터 전달)
+        self.publish_param_pub = self.create_publisher(
+            String, "/publish_param", 10
+        )
+
+    def plant_img_callback(self, msg: CompressedImage) -> None:
+        """ROS로부터 촬영한 작물 이미지를 MQTT 브로커의 'captured_img' 토픽으로 발행
 
         Args:
-            msg: 로봇의 현재 상태 정보를 담고 있는 ROS CompressedImage 메시지 객체.
+            msg: ROS CompressedImage 메시지 객체.
         """
 
         frame_id_str = msg.header.frame_id
@@ -123,8 +142,11 @@ class Connector(Node):
 
         now = time.time()
 
-        topic = self.TOPIC_PREFIX["plant_img"]
-        self.mqtt.publish(topic, msg.data)
+        topic = self.TOPIC_PREFIX["plant_img"] + "captured_img"
+        payload = msg_packer(
+            id=marker_id, time=now, img=base64.b64encode(msg.data).decode("utf-8")
+        )
+        self.mqtt.publish(topic, payload)
 
         self.get_logger().info(f"Marker {marker_id} 이미지 송신")
 
@@ -163,6 +185,18 @@ class Connector(Node):
             client.message_callback_add(
                 self.TOPIC_PREFIX["robot_command"] + "map_data",
                 self.on_map_data_message,
+            )
+            client.message_callback_add(
+                self.TOPIC_PREFIX["robot_command"] + "initial_pose",
+                self.on_initial_pose_message,
+            )
+            client.message_callback_add(
+                self.TOPIC_PREFIX["robot_command"] + "goal_pose",
+                self.on_goal_pose_message,
+            )
+            client.message_callback_add(
+                self.TOPIC_PREFIX["robot_command"] + "publish_param",
+                self.on_publish_param_message,
             )
             client.message_callback_add(
                 self.TOPIC_PREFIX["robot_command"] + "#", self.on_robot_message
@@ -281,6 +315,133 @@ class Connector(Node):
 
         mtime = int(time.time())
         self.publish_map(map_name, mtime, img_bytes, inform_string)
+
+    def amcl_pose_callback(self, msg: PoseWithCovarianceStamped) -> None:
+        """ROS /amcl_pose 수신 후 MQTT로 릴레이.
+
+        Args:
+            msg: 로봇의 현재 추정 위치를 담은 PoseWithCovarianceStamped 메시지.
+        """
+        pose = msg.pose.pose
+        payload = json.dumps(
+            {
+                "pose": {
+                    "pose": {
+                        "position": {
+                            "x": pose.position.x,
+                            "y": pose.position.y,
+                            "z": pose.position.z,
+                        },
+                        "orientation": {
+                            "x": pose.orientation.x,
+                            "y": pose.orientation.y,
+                            "z": pose.orientation.z,
+                            "w": pose.orientation.w,
+                        },
+                    }
+                }
+            }
+        )
+        topic = self.TOPIC_PREFIX["robot_telemetry"] + "amcl_pose"
+        self.mqtt.publish(topic, payload)
+        self.get_logger().debug("amcl_pose 전송")
+
+    def on_initial_pose_message(self, client, userdata, msg) -> None:
+        """'initial_pose' MQTT 명령을 처리하여 ROS /initialpose 토픽으로 발행.
+
+        Args:
+            client: MQTT 클라이언트 인스턴스.
+            userdata: 사용자 정의 데이터.
+            msg: 초기 위치 페이로드를 포함하는 MQTT 메시지 객체.
+        """
+        try:
+            payload = json.loads(msg.payload.decode("utf-8"))
+            x = float(payload["x"])
+            y = float(payload["y"])
+            z = float(payload.get("z", 0.0))
+            qx = float(payload.get("qx", 0.0))
+            qy = float(payload.get("qy", 0.0))
+            qz = float(payload["qz"])
+            qw = float(payload["qw"])
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            self.get_logger().error(f"initial_pose 파싱 오류: {e}")
+            return
+
+        ros_msg = PoseWithCovarianceStamped()
+        ros_msg.header.frame_id = "map"
+        ros_msg.header.stamp = self.get_clock().now().to_msg()
+        ros_msg.pose.pose.position.x = x
+        ros_msg.pose.pose.position.y = y
+        ros_msg.pose.pose.position.z = z
+        ros_msg.pose.pose.orientation.x = qx
+        ros_msg.pose.pose.orientation.y = qy
+        ros_msg.pose.pose.orientation.z = qz
+        ros_msg.pose.pose.orientation.w = qw
+        # covariance는 기본값 0.0 (36개 원소)
+
+        self.initial_pose_pub.publish(ros_msg)
+        self.get_logger().info(
+            f"초기 위치 설정: x={x:.3f}, y={y:.3f}, qz={qz:.3f}, qw={qw:.3f}"
+        )
+
+    def on_goal_pose_message(self, client, userdata, msg) -> None:
+        """'goal_pose' MQTT 명령을 처리하여 ROS /goal_pose 토픽으로 발행.
+
+        Args:
+            client: MQTT 클라이언트 인스턴스.
+            userdata: 사용자 정의 데이터.
+            msg: 목표 지점 페이로드를 포함하는 MQTT 메시지 객체.
+        """
+        try:
+            payload = json.loads(msg.payload.decode("utf-8"))
+            x = float(payload["x"])
+            y = float(payload["y"])
+            z = float(payload.get("z", 0.0))
+            qx = float(payload.get("qx", 0.0))
+            qy = float(payload.get("qy", 0.0))
+            qz = float(payload.get("qz", 0.0))
+            qw = float(payload.get("qw", 1.0))
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            self.get_logger().error(f"goal_pose 파싱 오류: {e}")
+            return
+
+        ros_msg = PoseStamped()
+        ros_msg.header.frame_id = "map"
+        ros_msg.header.stamp = self.get_clock().now().to_msg()
+        ros_msg.pose.position.x = x
+        ros_msg.pose.position.y = y
+        ros_msg.pose.position.z = z
+        ros_msg.pose.orientation.x = qx
+        ros_msg.pose.orientation.y = qy
+        ros_msg.pose.orientation.z = qz
+        ros_msg.pose.orientation.w = qw
+
+        self.goal_pose_pub.publish(ros_msg)
+        self.get_logger().info(f"목표 지점 설정: x={x:.3f}, y={y:.3f}")
+
+    def on_publish_param_message(self, client, userdata, msg) -> None:
+        """'publish_param' MQTT 명령을 처리하여 ROS /publish_param 토픽으로 발행.
+
+        주행 모드별 파라미터(speed, tolerance, inflation)와 현재 콘트롤러 정보를
+        std_msgs/String 타입으로 직렬화하여 발행합니다.
+
+        Args:
+            client: MQTT 클라이언트 인스턴스.
+            userdata: 사용자 정의 데이터.
+            msg: 파라미터 페이로드를 포함하는 MQTT 메시지 객체.
+        """
+        try:
+            payload = json.loads(msg.payload.decode("utf-8"))
+        except json.JSONDecodeError as e:
+            self.get_logger().error(f"publish_param JSON 파싱 오류: {e}")
+            return
+
+        ros_msg = String()
+        ros_msg.data = json.dumps(payload, ensure_ascii=False)
+
+        self.publish_param_pub.publish(ros_msg)
+        current = payload.get("current_controller", "?")
+        self.get_logger().info(f"파라미터 전송: current_controller={current}")
 
     def on_robot_message(self, client, userdata, msg) -> None:
         """일반적인 로봇 제어 MQTT 메시지를 처리.

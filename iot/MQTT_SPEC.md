@@ -99,3 +99,75 @@ name, hash가 일치하지 않으면 지도 요청 토픽 발행
     "time": (int) timestamp,
     "img": (string) plant image encoded by BASE64,
 }
+
+### 2-1-7. 초기 위치 설정 (Initial Pose)
+서버 -> 라즈베리파이 -> ROS /initialpose
+- 토픽명: `smartfarm/{region_id}/robot/command/{robot_id}/initial_pose`
+- 페이로드: json string {
+    "x": (float) 물리 좌표 x (미터),
+    "y": (float) 물리 좌표 y (미터),
+    "z": (float) 0.0 (고정),
+    "qx": (float) 0.0 (고정),
+    "qy": (float) 0.0 (고정),
+    "qz": (float) sin(yaw/2),
+    "qw": (float) cos(yaw/2),
+}
+
+ROS 매핑: geometry_msgs/PoseWithCovarianceStamped
+- frame_id: "map"
+- position: (x, y, z)
+- orientation: (qx, qy, qz, qw)
+- covariance: 36개 원소 0.0 (기본값)
+
+### 2-1-8. 목표 지점 이동 (Goal Pose)
+서버 -> 라즈베리파이 -> ROS /goal_pose
+- 토픽명: `smartfarm/{region_id}/robot/command/{robot_id}/goal_pose`
+- 페이로드: json string {
+    "x": (float) 물리 좌표 x (미터),
+    "y": (float) 물리 좌표 y (미터),
+    "z": (float) 0.0 (고정),
+    "qx": (float) 0.0 (고정),
+    "qy": (float) 0.0 (고정),
+    "qz": (float) sin(yaw/2) 또는 0.0 (방향 미지정 시),
+    "qw": (float) cos(yaw/2) 또는 1.0 (방향 미지정 시),
+}
+
+ROS 매핑: geometry_msgs/PoseStamped
+- frame_id: "map"
+- position: (x, y, z)
+- orientation: (qx, qy, qz, qw)
+
+### 2-1-9. 로봇 위치 텔레메트리 (AMCL Pose)
+라즈베리파이 -> 서버 (ROS /amcl_pose 수신 후 발신)
+- 토픽명: `smartfarm/{region_id}/robot/telemetry/{robot_id}/amcl_pose`
+- 페이로드: json string {
+    "pose": {
+        "pose": {
+            "position": { "x": float, "y": float, "z": float },
+            "orientation": { "x": float, "y": float, "z": float, "w": float }
+        }
+    }
+}
+
+ROS 매핑: geometry_msgs/PoseWithCovarianceStamped (covariance 제외하고 발신)
+
+### 2-1-10. 주행 파라미터 전송 (Publish Param)
+서버 -> 라즈베리파이 -> ROS /publish_param
+- 토픽명: `smartfarm/{region_id}/robot/command/{robot_id}/publish_param`
+- 페이로드: json string {
+    "controllers": {
+        "RPP":  { "speed": float, "tolerance": float, "inflation": float },
+        "SAFE": { "speed": float, "tolerance": float, "inflation": float },
+        "ACK":  { "speed": float, "tolerance": float, "inflation": float }
+    },
+    "current_controller": (string) "RPP" | "SAFE" | "ACK"
+}
+
+필드 설명:
+- speed (m/s): 이동 속도
+- tolerance (m): 목표 지점 도달 허용 오차 (대시보드 cm 값 / 100)
+- inflation (m): 장애물 인식 반경 (대시보드 cm 값 / 100)
+- current_controller: 현재 활성화할 주행 알고리즘
+
+ROS 매핑: std_msgs/String
+- data: 위 JSON을 문자열로 직렬화한 값

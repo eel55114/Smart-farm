@@ -18,13 +18,17 @@ from routes.home import home_bp
 from routes.plants import plants_bp
 from routes.robot import robot_bp
 
+# from state import FrameStore, RobotStateStore
+
 app = Flask(__name__)
 bootstrap = Bootstrap5(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="gevent")
+# app.config["frames"] = FrameStore()
+# app.config["robot_state"] = RobotStateStore()
 
 
 def relay_robot_ephemeral_data(robot_id, data):
-    socketio.emit(f"robot_{robot_id}_ephemeral", data)
+    socketio.emit(f"robot_{robot_id}_live", data)
 
 
 @socketio.on("control_robot")
@@ -43,27 +47,33 @@ def handle_robot_control(data):
         if robots_found:
             region_id = robots_found[0].region_id
     if not region_id:
-        region_id = 1  # 최종 Fallback
+        return
 
-    # MQTT_SPEC.md 규격: smartfarm/{region_id}/robot/command/{robot_id}/{command}
     topic = f"smartfarm/{region_id}/robot/command/{robot_id}/{command}"
 
     connector = app.config.get("MQTT_CONNECTOR")
     if connector:
-        # MQTT_SPEC.md 규격: {"data": value}
         success = connector.publish(topic, {"data": value})
         if not success:
             print(f"Failed to publish control command to Robot {robot_id}")
 
 
-@socketio.on("stream_front")
-def handle_cam1(data):
-    socketio.emit("render_front", data, include_self=False)
+@socketio.on("stream_image")
+def handle_stream_image(data):
+    """
+    로봇 ID + 카메라 방향별 이미지 스트리밍 처리.
+    클라이언트(image_sender)에서 {"robot_id": <id>, "dir": "front"|"side", "frame": <bytes>} 형태로 송신.
+    서버는 render_{robot_id}_front 또는 render_{robot_id}_side 이벤트로 relay.
+    """
+    robot_id = data.get("robot_id")
+    direction = data.get("dir")  # "front" 또는 "side"
+    frame = data.get("frame")
 
+    if robot_id is None or direction not in ("front", "side") or frame is None:
+        return
 
-@socketio.on("stream_side")
-def handle_cam2(data):
-    socketio.emit("render_side", data, include_self=False)
+    event_name = f"render_{robot_id}_{direction}"
+    socketio.emit(event_name, frame, include_self=False)
 
 
 app.register_blueprint(home_bp)

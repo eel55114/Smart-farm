@@ -111,8 +111,7 @@
 
                 <!-- 상태 표시창 -->
                 <div class="col-5">
-                    <div id="state-container" hx-get="/api/current_robot_state{% if current_region or current_robot %}?{% if current_region %}region={{ current_region }}{% if current_robot %}&{% endif %}{% endif %}{% if current_robot %}robot={{ current_robot }}{% endif %}{% endif %}" hx-trigger="load, every 1s"
-                        hx-swap="innerHTML">
+                    <div id="state-container">
                         {% include '_robot_state.html' %}
                     </div>
                 </div>
@@ -123,7 +122,7 @@
         <script src="{{ url_for('static', filename='js/map_utils.js') }}"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
         <script>
-            // 이미지 갱신
+            // 이미지 갱신: 현재 선택된 로봇의 이미지만 수신
             const socket = io();
 
             function updateImage(elementId, arrayBuffer) {
@@ -174,15 +173,133 @@
                 info.lastSignal = now;
             }
 
-            socket.on('render_front', function(data) {
-                updateImage('img_front', data);
-                updateInfo(frontInfo);
-            });
+            // 현재 선택된 로봇 ID에 대한 이미지 스트림 이벤트 구독
+            const currentRobotId = "{{ current_robot if current_robot else 'null' }}";
 
-            socket.on('render_side', function(data) {
-                updateImage('img_side', data);
-                updateInfo(sideInfo);
-            });
+            if (currentRobotId !== 'null') {
+                socket.on(`render_${currentRobotId}_front`, function(data) {
+                    updateImage('img_front', data);
+                    updateInfo(frontInfo);
+                });
+
+                socket.on(`render_${currentRobotId}_side`, function(data) {
+                    updateImage('img_side', data);
+                    updateInfo(sideInfo);
+                });
+            }
+
+
+            let lastRobotPose = null; // Cache the last known pose to redraw after map load
+            
+            if (currentRobotId !== 'null') {
+                socket.on(`robot_${currentRobotId}_live`, function(data) {
+                    if (!data) return;
+                    const msgType = data.type;
+                    const payload = data.payload;
+                    if (!payload) return;
+
+                    if (msgType === "battery_state") {
+                        const batteryElem = document.getElementById("robot-battery-percent");
+                        if (batteryElem && payload.percentage !== undefined) {
+                            const pct = payload.percentage > 1.0 ? payload.percentage : (payload.percentage * 100);
+                            batteryElem.innerText = Math.round(pct);
+                        }
+                    }
+                    else if (msgType === "state") {
+                        const stateElem = document.getElementById("robot-current-state");
+                        if (stateElem && payload.state !== undefined) {
+                            stateElem.innerText = payload.state;
+                        }
+                    }
+                    else if (msgType === "amcl_pose") {
+                        try {
+                            if (!payload.pose || !payload.pose.pose) {
+                                console.warn("Invalid amcl_pose: pose or pose.pose is missing", payload);
+                                return;
+                            }
+                            const pose = payload.pose.pose;
+                            if (!pose.position || !pose.orientation) {
+                                console.warn("Invalid amcl_pose: position or orientation is missing", pose);
+                                return;
+                            }
+                            const x = pose.position.x;
+                            const y = pose.position.y;
+                            
+                            const qz = pose.orientation.z;
+                            const qw = pose.orientation.w;
+                            if (x === undefined || y === undefined || qz === undefined || qw === undefined) {
+                                console.warn("Invalid amcl_pose: missing coordinates or orientation elements", pose);
+                                return;
+                            }
+                            const yaw = 2 * Math.atan2(qz, qw); // Radian
+
+                            lastRobotPose = { x: x, y: y, yaw: yaw }; // Caching
+                            drawRobotPosition(x, y, yaw);
+
+                            // 초기 위치 마커가 남아있으면 pose 수신 시 제거
+                            if (initialPoseMarker && canvas) {
+                                canvas.remove(initialPoseMarker.circle);
+                                canvas.remove(initialPoseMarker.line);
+                                initialPoseMarker = null;
+                                canvas.requestRenderAll();
+                            }
+                        } catch (err) {
+                            console.error("Error parsing amcl_pose data:", err);
+                        }
+                    }
+                });
+            }
+
+            let robotMarker = null;
+
+            function drawRobotPosition(x, y, yawRad) {
+                if (!canvas || mapWidth === 0 || mapHeight === 0) return;
+
+                // 물리 좌표 -> 캔버스 픽셀 좌표 역산
+                const px = (x - mapOriginX) / mapResolution;
+                const py = mapHeight - ((y - mapOriginY) / mapResolution);
+
+                // 가로 306mm 맵 스케일 팩터 계산 (패스 기본 너비 114)
+                const scaleFactor = (0.306 / mapResolution) / 114;
+
+                // Y축 반전 캔버스계 회전 보정 (북쪽 정면 -> 동쪽 0도 보정 포함)
+                const yawDegree = -yawRad * (180 / Math.PI) + 90;
+                
+                const zoom = canvas.getZoom();
+
+                if (!robotMarker) {
+                    const pathData = "M -17 8 C 7 -7 -7 -7 18 8 C 32 17 56 10 57 30 V 94 C 57 107 52 112 40 112 H -40 C -52 112 -57 107 -57 94 V 30 C -57 10 -32 17 -17 8 Z";
+                    
+                    robotMarker = new fabric.Path(pathData, {
+                        fill: 'rgba(8,204,133, 0.3)',
+                        stroke: 'rgba(7, 177, 98, 1.0)',
+                        strokeWidth: 3 / zoom,
+                        strokeUniform: true,
+                        originX: 'center',
+                        originY: 0.65,
+                        selectable: false,
+                        hoverCursor: 'default',
+                        scaleX: scaleFactor,
+                        scaleY: scaleFactor,
+                        left: px,
+                        top: py,
+                        angle: yawDegree
+                    });
+                    canvas.add(robotMarker);
+                } else {
+                    robotMarker.set({
+                        left: px,
+                        top: py,
+                        scaleX: scaleFactor,
+                        scaleY: scaleFactor,
+                        angle: yawDegree,
+                        strokeWidth: 3 / zoom
+                    });
+                }
+                
+                robotMarker.bringToFront();
+                canvas.requestRenderAll();
+            }
 
             // --- Fabric.js 기반 로봇 맵 시각화 및 제어 ---
             let canvas;
@@ -195,13 +312,37 @@
             let mapImageObject = null;
             let minZoom = 0.1;
 
+            // 초기 위치 지정 모드 관련 변수
+            let isSetInitialMode = false;      // 초기 위치 지정 모드 활성화 여부
+            let initialPoseMarker = null;      // 초기 위치: 빨간 원 + 직선 그룹
+            let initialDragStart = null;       // 드래그 시작 지점 (캔버스 좌표)
+            let isInitialDragging = false;     // 드래그 중 여부
+            let lastInitialAngleDeg = 0;       // 마지막으로 계산된 드래그 각도 (mouse:up에서 직접 사용)
+
+            const INITIAL_CIRCLE_RADIUS = 12;  // 화면 픽셀 단위 고정 크기 (zoom 무관)
+            const INITIAL_LINE_LENGTH = 40;    // 화면 픽셀 단위 고정 선 길이
+
             function updateMarkerScale() {
-                if (canvas && currentMarker) {
-                    const zoom = canvas.getZoom();
+                if (!canvas) return;
+                const zoom = canvas.getZoom();
+                if (currentMarker) {
                     currentMarker.set({
                         scaleX: 1 / zoom,
                         scaleY: 1 / zoom
                     });
+                }
+                if (robotMarker) {
+                    robotMarker.set({
+                        strokeWidth: 3 / zoom
+                    });
+                }
+                // 초기 위치 마커도 zoom 변경 시 재드로우 (크기 고정)
+                if (initialPoseMarker) {
+                    drawInitialPoseMarker(
+                        initialPoseMarker.canvasX,
+                        initialPoseMarker.canvasY,
+                        initialPoseMarker.angleDeg
+                    );
                 }
             }
 
@@ -244,6 +385,11 @@
                             canvas.add(img);
                             canvas.sendToBack(img);
                             resetMapViewport();
+                            
+                            // 지도가 로드된 시점에 캐싱된 위치가 있다면 즉시 로봇 마커 렌더링
+                            if (lastRobotPose) {
+                                drawRobotPosition(lastRobotPose.x, lastRobotPose.y, lastRobotPose.yaw);
+                            }
                         });
                     })
                     .catch(err => {
@@ -378,14 +524,79 @@
                     return false;
                 });
 
-                // 지도 클릭 마커 지정
-                canvas.on('mouse:down', function(opt) {
-                    const evt = opt.e;
-                    // 우클릭(2), 휠클릭(1), 혹은 Alt 키 드래그 상태인 경우 마커 지정을 건너뜀
-                    if (evt.button === 2 || evt.button === 1) {
-                        return;
+                // ─── 초기 위치 지정 모드: 드래그로 위치+방향 지정 ───
+
+                // 초기 위치 마커(원 + 단방향 직선)를 그리는 헬퍼
+                // 그룹 미사용: 원과 선을 별도 오브젝트로 관리해 회전 중심을 반드시 원의 중심으로 유지
+                function drawInitialPoseMarker(canvasX, canvasY, angleDeg) {
+                    // 기존 마커 제거
+                    if (initialPoseMarker) {
+                        canvas.remove(initialPoseMarker.circle);
+                        canvas.remove(initialPoseMarker.line);
+                        initialPoseMarker = null;
                     }
 
+                    const zoom = canvas.getZoom();
+                    const r = INITIAL_CIRCLE_RADIUS;
+                    const L = INITIAL_LINE_LENGTH;
+                    const angleRad = angleDeg * (Math.PI / 180);
+
+                    // 원: 화면 픽셀 기준 고정 크기 (scaleX/Y = 1/zoom)
+                    const circle = new fabric.Circle({
+                        radius: r,
+                        fill: 'rgba(220,0,0,0.25)',
+                        stroke: 'red',
+                        strokeWidth: 2,
+                        left: canvasX,
+                        top: canvasY,
+                        originX: 'center',
+                        originY: 'center',
+                        selectable: false,
+                        hoverCursor: 'crosshair',
+                        scaleX: 1 / zoom,
+                        scaleY: 1 / zoom
+                    });
+
+                    // 단방향 직선: 원 중심(canvasX, canvasY)에서 angleDeg 방향으로 L 화면픽셀
+                    // angleDeg 0 = 위쪽, 시계방향 증가
+                    const endX = canvasX + (L / zoom) * Math.sin(angleRad);
+                    const endY = canvasY - (L / zoom) * Math.cos(angleRad);
+
+                    const line = new fabric.Line([canvasX, canvasY, endX, endY], {
+                        stroke: 'red',
+                        strokeWidth: 2.5 / zoom,
+                        selectable: false,
+                        hoverCursor: 'crosshair'
+                    });
+
+                    // 선 먼저 추가한 뒤 원을 위에 되도록
+                    canvas.add(line);
+                    canvas.add(circle);
+
+                    // 위치/각도 정보를 함께 저장 (zoom 변경 시 재드로우용)
+                    initialPoseMarker = { circle, line, canvasX, canvasY, angleDeg };
+                    canvas.requestRenderAll();
+                }
+
+                // 초기 위치 지정 모드: mouse:down
+                canvas.on('mouse:down', function(opt) {
+                    const evt = opt.e;
+                    if (evt.button === 2 || evt.button === 1) return;
+
+                    // ── 초기 위치 지정 모드 활성화 시 ──
+                    if (isSetInitialMode) {
+                        const pointer = canvas.getPointer(evt);
+                        if (pointer.x >= 0 && pointer.x <= mapWidth &&
+                            pointer.y >= 0 && pointer.y <= mapHeight) {
+                            isInitialDragging = true;
+                            initialDragStart = { x: pointer.x, y: pointer.y };
+                            // 드래그 시작 시 기본 방향(위쪽)으로 마커 미리 표시
+                            drawInitialPoseMarker(pointer.x, pointer.y, 0);
+                        }
+                        return; // 기존 목표 마커 동작 오버라이딩
+                    }
+
+                    // ── 일반 모드: 목표 마커 지정 ──
                     if (opt.target && opt.target.name === 'goal-marker') {
                         canvas.remove(opt.target);
                         currentMarker = null;
@@ -425,6 +636,56 @@
                     }
                 });
 
+                // 초기 위치 지정 모드: mouse:move (드래그 중 방향 갱신)
+                canvas.on('mouse:move', function(opt) {
+                    if (!isSetInitialMode || !isInitialDragging || !initialDragStart) return;
+                    const pointer = canvas.getPointer(opt.e);
+                    const dx = pointer.x - initialDragStart.x;
+                    const dy = pointer.y - initialDragStart.y;
+                    // atan2: canvas y축 반전 고려 → 위쪽이 0도, 오른쪽이 90도
+                    lastInitialAngleDeg = Math.atan2(dx, -dy) * (180 / Math.PI);
+                    drawInitialPoseMarker(initialDragStart.x, initialDragStart.y, lastInitialAngleDeg);
+                });
+
+                // 초기 위치 지정 모드: mouse:up (드래그 완료 → 버튼 비활성화)
+                canvas.on('mouse:up', function(opt) {
+                    if (!isSetInitialMode || !isInitialDragging || !initialDragStart) return;
+                    isInitialDragging = false;
+
+                    if (!initialPoseMarker) return;
+                    // lastInitialAngleDeg: mouse:move에서 직접 저장한 값 사용 (참조 오류 방지)
+                    const angleDeg = lastInitialAngleDeg;
+                    const canvasX = initialDragStart.x;
+                    const canvasY = initialDragStart.y;
+
+                    // 물리 좌표 변환
+                    const mx = canvasX * mapResolution + mapOriginX;
+                    const my = (mapHeight - canvasY) * mapResolution + mapOriginY;
+                    // canvas 각도(시계방향, 위쪽=0) → ROS yaw (반시계방향, 동쪽=0)
+                    const yawRad = (90 - angleDeg) * (Math.PI / 180);
+
+                    console.log(`초기 위치 설정: x=${mx.toFixed(3)}, y=${my.toFixed(3)}, yaw=${yawRad.toFixed(3)} rad`);
+
+                    fetch('/api/robot_set_initial_pose', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ x: mx, y: my, yaw: yawRad, robot: parseInt(currentRobotId) })
+                    })
+                    .then(res => res.json())
+                    .then(data => console.log('초기 위치 전송 완료:', data))
+                    .catch(err => console.error('초기 위치 전송 오류:', err));
+
+                    initialDragStart = null;
+
+                    // 드래그 완료 후 버튼 비활성화 (초기 위치 지정 모드 해제)
+                    isSetInitialMode = false;
+                    const btn = document.getElementById('btn-set-initial');
+                    btn.classList.remove('btn-danger', 'active');
+                    btn.classList.add('btn-secondary');
+                    canvas.defaultCursor = 'default';
+                    canvas.hoverCursor = 'move';
+                });
+
                 // 초기 지도 렌더링
                 current_robot_map();
 
@@ -457,9 +718,32 @@
                     current_robot_map();
                 });
 
-                // '초기 위치 지정' 액션
+                // '초기 위치 지정' 액션: 토글
                 document.getElementById('btn-set-initial').addEventListener('click', function() {
-                    // 기능 미정
+                    isSetInitialMode = !isSetInitialMode;
+
+                    if (isSetInitialMode) {
+                        // 활성화
+                        this.classList.remove('btn-secondary');
+                        this.classList.add('btn-danger', 'active');
+                        // 기존 초기 위치 마커 제거
+                        if (initialPoseMarker) {
+                            canvas.remove(initialPoseMarker.circle);
+                            canvas.remove(initialPoseMarker.line);
+                            initialPoseMarker = null;
+                            canvas.requestRenderAll();
+                        }
+                        canvas.defaultCursor = 'crosshair';
+                        canvas.hoverCursor = 'crosshair';
+                    } else {
+                        // 비활성화
+                        this.classList.remove('btn-danger', 'active');
+                        this.classList.add('btn-secondary');
+                        canvas.defaultCursor = 'default';
+                        canvas.hoverCursor = 'move';
+                        isInitialDragging = false;
+                        initialDragStart = null;
+                    }
                 });
             });
         </script>

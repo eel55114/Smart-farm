@@ -117,6 +117,12 @@ class Connector:
                 )
 
                 self.queue.put(data)
+
+                # RDB 저장과 동시에 소켓 실시간 피드백 릴레이 추가
+                if self.on_robot_ephemeral_data:
+                    self.on_robot_ephemeral_data(
+                        robot_id, {"type": "state", "payload": payload}
+                    )
             except Exception as e:
                 print(f"State 수신 처리 오류: {e}")
         elif msg_type in ["battery_state", "amcl_pose", "robot_mode"]:
@@ -189,5 +195,8 @@ class Connector:
 
 
 if __name__ == "__main__":
-    c = Connector()
-    c.run()
+    try:
+        c = Connector()
+        c.run()
+    finally:
+        c.stop()
