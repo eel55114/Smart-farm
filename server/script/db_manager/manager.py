@@ -554,6 +554,86 @@ class DBManager:
             session.rollback()
             return [], 0, e
 
+    def get_robot_parameter(
+        self, robot_id: int
+    ) -> tuple[datatype.RobotParameter | None, Exception | None]:
+        """
+        `robot_parameter` 테이블에서 로봇 파라미터를 조회합니다.
+
+        Args:
+            robot_id (int): 조회할 로봇 ID
+
+        Returns:
+            tuple[result, error]:
+                - result (datatype.RobotParameter | None): 조회 결과. 데이터가 없으면 None
+                - error (Exception | None): 발생한 에러
+        """
+        session = self.session_local()
+        try:
+            stmt = select(schema.RobotParameter).where(
+                schema.RobotParameter.robot_id == robot_id
+            )
+            datum = session.scalars(stmt).first()
+
+            if datum is None:
+                return None, None
+
+            result = datatype.RobotParameter(
+                robot_id=datum.robot_id,
+                controller=datum.controller,
+                rpp=datum.rpp,
+                safe=datum.safe,
+                ack=datum.ack,
+            )
+            return result, None
+
+        except Exception as e:
+            session.rollback()
+            return None, e
+
+    def upsert_robot_parameter(
+        self, param: datatype.RobotParameter
+    ) -> Exception | None:
+        """
+        `robot_parameter` 테이블에 파라미터를 저장합니다.
+        이미 해당 robot_id의 행이 있으면 갱신(UPDATE), 없으면 삽입(INSERT)합니다.
+
+        Args:
+            param (datatype.RobotParameter): 저장할 파라미터 객체
+
+        Returns:
+            Exception | None: 발생한 에러
+        """
+        session = self.session_local()
+        try:
+            stmt = select(schema.RobotParameter).where(
+                schema.RobotParameter.robot_id == param.robot_id
+            )
+            existing = session.scalars(stmt).first()
+
+            if existing is not None:
+                existing.controller = param.controller
+                existing.rpp  = param.rpp
+                existing.safe = param.safe
+                existing.ack  = param.ack
+            else:
+                new_row = schema.RobotParameter(
+                    robot_id=param.robot_id,
+                    controller=param.controller,
+                    rpp=param.rpp,
+                    safe=param.safe,
+                    ack=param.ack,
+                )
+                session.add(new_row)
+
+            session.commit()
+            return None
+
+        except Exception as e:
+            session.rollback()
+            return e
+
+
     def get_plant_statistics(
         self,
         type_ids: list[int] | None = None,

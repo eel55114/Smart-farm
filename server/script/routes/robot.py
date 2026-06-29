@@ -20,14 +20,42 @@ def robot_schedule():
 
 @robot_bp.route("/robot/settings")
 def robot_settings():
-    # 플레이스홀더 고정 설정 데이터 반환 (신규 규격 반영)
-    default_settings = {
-        "algorithm": "RPP",
-        "rpp":  {"speed": 0.12, "goal_tolerance": 0.10, "obstacle_dist": 0.80},
-        "safe": {"speed": 0.10, "goal_tolerance": 0.10, "obstacle_dist": 0.60},
-        "ack":  {"speed": 0.16, "goal_tolerance": 0.10, "obstacle_dist": 0.50},
-    }
-    return render_template("robot_settings.html", settings=default_settings)
+    robot_id = request.args.get("robot", type=int)
+
+    # DB에서 파라미터 조회 (없으면 기본값 사용)
+    settings = None
+    if robot_id is not None:
+        param, _ = db.get_robot_parameter(robot_id)
+        if param is not None:
+            settings = {
+                "algorithm": param.controller,
+                "rpp":  {
+                    "speed":          param.rpp.get("speed",     0.12),
+                    "goal_tolerance": param.rpp.get("tolerance", 0.10),
+                    "obstacle_dist":  param.rpp.get("inflation", 0.80),
+                },
+                "safe": {
+                    "speed":          param.safe.get("speed",     0.10),
+                    "goal_tolerance": param.safe.get("tolerance", 0.10),
+                    "obstacle_dist":  param.safe.get("inflation", 0.60),
+                },
+                "ack":  {
+                    "speed":          param.ack.get("speed",     0.16),
+                    "goal_tolerance": param.ack.get("tolerance", 0.10),
+                    "obstacle_dist":  param.ack.get("inflation", 0.50),
+                },
+            }
+
+    if settings is None:
+        # DB 데이터 없으면 기본값
+        settings = {
+            "algorithm": "RPP",
+            "rpp":  {"speed": 0.12, "goal_tolerance": 0.10, "obstacle_dist": 0.80},
+            "safe": {"speed": 0.10, "goal_tolerance": 0.10, "obstacle_dist": 0.60},
+            "ack":  {"speed": 0.16, "goal_tolerance": 0.10, "obstacle_dist": 0.50},
+        }
+
+    return render_template("robot_settings.html", settings=settings)
 
 
 @robot_bp.route("/api/robot_settings", methods=["POST"])
@@ -69,6 +97,31 @@ def save_robot_settings():
 
             topic = f"smartfarm/{region_id}/robot/command/{robot_id}/publish_param"
             connector.publish(topic, ros_payload)
+
+        # DB에 파라미터 저장 (upsert)
+        from db_manager import datatype as dt
+        param = dt.RobotParameter(
+            robot_id=robot_id,
+            controller=data.get("algorithm", "RPP"),
+            rpp={
+                "speed":     data.get("rpp", {}).get("speed", 0.12),
+                "tolerance": data.get("rpp", {}).get("goal_tolerance", 0.10),
+                "inflation": data.get("rpp", {}).get("obstacle_dist", 0.80),
+            },
+            safe={
+                "speed":     data.get("safe", {}).get("speed", 0.10),
+                "tolerance": data.get("safe", {}).get("goal_tolerance", 0.10),
+                "inflation": data.get("safe", {}).get("obstacle_dist", 0.60),
+            },
+            ack={
+                "speed":     data.get("ack", {}).get("speed", 0.16),
+                "tolerance": data.get("ack", {}).get("goal_tolerance", 0.10),
+                "inflation": data.get("ack", {}).get("obstacle_dist", 0.50),
+            },
+        )
+        err = db.upsert_robot_parameter(param)
+        if err:
+            print(f"[Robot Settings Save] DB upsert 오류: {err}")
 
     return {"status": "success", "message": "Settings saved successfully"}, 200
 

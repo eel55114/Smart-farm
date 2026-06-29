@@ -96,3 +96,21 @@ class RobotHistory:
     robot_id: int
     state: str
     robot_name: str = field(default=None)
+
+
+@dataclass
+class RobotParameter:
+    """robot_parameter 테이블과 매핑되는 데이터 클래스.
+
+    Attributes:
+        robot_id: 로봇 ID (robot 테이블 FK)
+        controller: 현재 활성 주행 알고리즘 ('RPP' | 'SAFE' | 'ACK')
+        rpp:  RPP 모드 파라미터  {'speed': float, 'tolerance': float, 'inflation': float}
+        safe: SAFE 모드 파라미터 {'speed': float, 'tolerance': float, 'inflation': float}
+        ack:  ACK  모드 파라미터 {'speed': float, 'tolerance': float, 'inflation': float}
+    """
+    robot_id: int
+    controller: str = field(default="RPP")
+    rpp:  dict = field(default_factory=lambda: {"speed": 0.12, "tolerance": 0.10, "inflation": 0.80})
+    safe: dict = field(default_factory=lambda: {"speed": 0.10, "tolerance": 0.10, "inflation": 0.60})
+    ack:  dict = field(default_factory=lambda: {"speed": 0.16, "tolerance": 0.10, "inflation": 0.50})
