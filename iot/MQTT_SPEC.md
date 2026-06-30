@@ -44,13 +44,13 @@ IoT 허브 -> 서버
 (→로봇)주행 알고리즘 		/select_controller	std_msgs/String 	["RPP", "SAFE", "ACK"]
 (→로봇)수동 조작		/remote_control		std_msgs/String		["f", "b", "l", "r", "s"]
 (로봇→)상태 메시지		/robot_state		std_msgs/String
-(로봇→)배터리 잔량		/battery_state		sensor_msgs/BatteryState
+(로봇→)배터리 잔량		/battery		std_msgs/String
 
 
 (로봇→)지도 데이터 수신 	/map			nav_msgs/OccupancyGrid
 (로봇→)작물 촬영 결과		/captured_image/compressed	sensor_msgs/CompressedImage
 
-#### 2-1-1. 로봇 상태
+#### 2-1-1. 로봇 실시간 상태
 <-로봇
 - 토픽명: `smartfarm/{region_id}/robot/telemetry/{robot_id}/state`
 
@@ -171,3 +171,12 @@ ROS 매핑: geometry_msgs/PoseWithCovarianceStamped (covariance 제외하고 발
 
 ROS 매핑: std_msgs/String
 - data: 위 JSON을 문자열로 직렬화한 값
+
+
+#### 2-1-11. 로봇 상세 로그
+<-로봇
+- 토픽명: `smartfarm/{region_id}/robot/telemetry/{robot_id}/log`
+- 페이로드: json string {
+    "time": (int) timestamp,
+    "data": (string) log message,
+}

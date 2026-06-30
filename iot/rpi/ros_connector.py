@@ -102,7 +102,13 @@ class Connector(Node):
         self.map_pub = self.create_publisher(OccupancyGrid, "/map", 10)
 
         self.state_sub = self.create_subscription(
-            String, "/robot_state", self.robot_state_callback, 10
+            String, "/robot_state", self.robot_state_callback, 1
+        )
+        self.battery_sub = self.create_subscription(
+            String, "/battery", self.robot_battery_callback, 1
+        )
+        self.state_log = self.create_subscription(
+            String, "/robot_log", self.robot_log_callback, 10
         )
 
         self.captured_sub = self.create_subscription(
@@ -120,14 +126,10 @@ class Connector(Node):
         )
 
         # /goal_pose 발행 퍼블리셔
-        self.goal_pose_pub = self.create_publisher(
-            PoseStamped, "/goal_pose", 10
-        )
+        self.goal_pose_pub = self.create_publisher(PoseStamped, "/goal_pose", 10)
 
         # /publish_param 발행 퍼블리셔 (주행 파라미터 전달)
-        self.publish_param_pub = self.create_publisher(
-            String, "/publish_param", 10
-        )
+        self.publish_param_pub = self.create_publisher(String, "/publish_param", 10)
 
     def plant_img_callback(self, msg: CompressedImage) -> None:
         """ROS로부터 촬영한 작물 이미지를 MQTT 브로커의 'captured_img' 토픽으로 발행
@@ -159,8 +161,45 @@ class Connector(Node):
             msg: 로봇의 현재 상태 정보를 담고 있는 ROS String 메시지 객체.
         """
         topic = self.TOPIC_PREFIX["robot_telemetry"] + "state"
-        self.mqtt.publish(topic, msg.data)
+        payload = msg_packer(state=msg.data)
+        self.mqtt.publish(topic, payload)
         self.get_logger().info(f"로봇 상태 전송: {msg.data}")
+
+    def robot_battery_callback(self, msg: String) -> None:
+        """ROS /battery_state 토픽으로부터 배터리 잔량을 수신했을 때 호출되는 콜백 메서드
+
+        수신된 배터리 데이터를 MQTT 브로커의 'battery' 토픽으로 발행
+
+        Args:
+            msg: 배터리 잔량 퍼센트(0~100)를 담고 있는 ROS String 메시지 객체.
+        """
+        topic = self.TOPIC_PREFIX["robot_telemetry"] + "battery"
+        percentage = 0
+        try:
+            percentage = int(float(msg.data))
+        except:
+            pass
+
+        payload = msg_packer(
+            data=percentage,
+        )
+        self.mqtt.publish(topic, payload)
+
+    def robot_log_callback(self, msg: String) -> None:
+        """ROS로부터 로봇 로그를 수신했을 때 호출되는 콜백 메서드
+
+        수신된 상태 데이터를 MQTT 브로커의 'log' 토픽으로 발행
+
+        Args:
+            msg: 로봇의 현재 상태 정보를 담고 있는 ROS String 메시지 객체.
+        """
+        topic = self.TOPIC_PREFIX["robot_telemetry"] + "log"
+        payload = msg_packer(
+            time=time.time(),
+            data=msg.data,
+        )
+        self.mqtt.publish(topic, payload)
+        self.get_logger().info(f"로봇 로그 전송: {msg.data}")
 
     def on_connect(self, client, userdata, flags, reason_code, properties) -> None:
         """MQTT 클라이언트가 브로커에 연결되었을 때 호출되는 콜백 메서드.

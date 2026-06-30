@@ -101,7 +101,7 @@ class Connector:
         robot_id = int(topic[4])
         msg_type = topic[5]
 
-        if msg_type == "state":
+        if msg_type == "log":
             try:
                 payload = json.loads(msg.payload.decode("utf-8"))
                 dt = (
@@ -112,20 +112,14 @@ class Connector:
 
                 data = datatype.Robot(
                     id=robot_id,
-                    state=payload["state"],
+                    state=payload["data"],
                     last_signal=dt,  # type: ignore
                 )
 
                 self.queue.put(data)
-
-                # RDB 저장과 동시에 소켓 실시간 피드백 릴레이 추가
-                if self.on_robot_ephemeral_data:
-                    self.on_robot_ephemeral_data(
-                        robot_id, {"type": "state", "payload": payload}
-                    )
             except Exception as e:
                 print(f"State 수신 처리 오류: {e}")
-        elif msg_type in ["battery_state", "amcl_pose", "robot_mode"]:
+        elif msg_type in ["state", "battery", "amcl_pose", "robot_mode"]:
             if self.on_robot_ephemeral_data:
                 try:
                     payload = json.loads(msg.payload.decode("utf-8"))

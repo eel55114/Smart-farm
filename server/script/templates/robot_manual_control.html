@@ -198,10 +198,10 @@
                     const payload = data.payload;
                     if (!payload) return;
 
-                    if (msgType === "battery_state") {
+                    if (msgType === "battery") {
                         const batteryElem = document.getElementById("robot-battery-percent");
-                        if (batteryElem && payload.percentage !== undefined) {
-                            const pct = payload.percentage > 1.0 ? payload.percentage : (payload.percentage * 100);
+                        if (batteryElem && payload.data !== undefined) {
+                            const pct = payload.data > 1.0 ? payload.data : (payload.data * 100);
                             batteryElem.innerText = Math.round(pct);
                         }
                     }

@@ -159,6 +159,14 @@ def robot_manual_control() -> str:
     is_manual = False
     # todo: 로봇 3모드로 개편
 
+    # 현재 로봇 상태 및 배터리 초기값 조회
+    current_state = '-'
+    current_battery = '-'
+    if robot_id is not None:
+        robots_found, _ = db.get_current_robot(robot_ids=[robot_id])
+        if robots_found:
+            current_state = robots_found[0].state or '-'
+
     robot_histories, count, err = db.get_robot_history(
         n=per_page,
         offset=offset,
@@ -199,6 +207,8 @@ def robot_manual_control() -> str:
         page=page,
         has_next=has_next,
         is_manual=is_manual,
+        current_state=current_state,
+        current_battery=current_battery,
     )
 
 
