@@ -6,18 +6,18 @@
 {% set algorithms = [
     {
         'id': 'rpp',
-        'name': 'RPP',
-        'desc': 'RPP (Regulated Pure Pursuit): 목표까지 최단 경로에 가깝게 이동하는 표준적인 주행 방식입니다.'
+        'name': 'FAST',
+        'desc': '목표까지 최단 경로에 가깝게 이동하는 표준적인 주행 방식입니다.'
     },
     {
         'id': 'safe',
         'name': 'SAFE',
-        'desc': 'SAFE (TEB, Timed Elastic Band): 장애물을 부드럽게 회피하는 주행 방식으로 장애물이 많거나 경로가 복잡한 장소에 적합합니다.'
+        'desc': '장애물을 부드럽게 회피하는 주행 방식으로 장애물이 많거나 경로가 복잡한 장소에 적합합니다.'
     },
     {
         'id': 'ack',
-        'name': 'ACK',
-        'desc': 'ACK (Ackermann Steering): 제자리 회전을 지양하는 주행 방식으로 후방 적치물이 많을 때 적합합니다.'
+        'name': 'STABLE',
+        'desc': '제자리 회전을 지양하는 주행 방식으로 후방 적치물이 많을 때 적합합니다.'
     }
 ] %}
 
@@ -64,31 +64,30 @@
                 </div>
             </div>
 
-            <!-- 블록 2~4: RPP, SAFE, ACK 옵션 (Jinja 루프로 동적 렌더링) -->
-            {% for mode in ['rpp', 'safe', 'ack'] %}
+            {% for algo in algorithms %}
             <div class="content-card mb-4">
-                <h4 class="mb-3 text-primary border-bottom pb-2 d-flex align-items-center">{{ mode | upper }} 모드 세부 설정</h4>
+                <h4 class="mb-3 text-primary border-bottom pb-2 d-flex align-items-center">{{ algo.name }} 모드 세부 설정</h4>
                 <div class="row g-4">
                     <div class="col-md-4">
                         <label class="form-label d-flex justify-content-between align-items-center">
                             <span>이동 속도</span>
-                            <span class="badge bg-secondary fs-6" id="{{ mode }}-speed-val">0.00 m/s</span>
+                            <span class="badge bg-secondary fs-6" id="{{ algo.id }}-speed-val">0.00 m/s</span>
                         </label>
-                        <input type="range" class="form-range settings-slider" id="{{ mode }}-speed" min="0.08" max="0.24" step="0.02" disabled>
+                        <input type="range" class="form-range settings-slider" id="{{ algo.id }}-speed" min="0.08" max="0.24" step="0.02" disabled>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label d-flex justify-content-between align-items-center">
                             <span>이동 허용 오차</span>
-                            <span class="badge bg-secondary fs-6" id="{{ mode }}-tol-val">0 cm</span>
+                            <span class="badge bg-secondary fs-6" id="{{ algo.id }}-tol-val">0 cm</span>
                         </label>
-                        <input type="range" class="form-range settings-slider" id="{{ mode }}-tol" min="5" max="15" step="1" disabled>
+                        <input type="range" class="form-range settings-slider" id="{{ algo.id }}-tol" min="5" max="15" step="1" disabled>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label d-flex justify-content-between align-items-center">
                             <span>장애물 인식 거리</span>
-                            <span class="badge bg-secondary fs-6" id="{{ mode }}-dist-val">0 cm</span>
+                            <span class="badge bg-secondary fs-6" id="{{ algo.id }}-dist-val">0 cm</span>
                         </label>
-                        <input type="range" class="form-range settings-slider" id="{{ mode }}-dist" min="5" max="100" step="5" disabled>
+                        <input type="range" class="form-range settings-slider" id="{{ algo.id }}-dist" min="5" max="100" step="5" disabled>
                     </div>
                 </div>
             </div>
