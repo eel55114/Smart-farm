@@ -40,7 +40,7 @@ IoT 허브 -> 서버
 (→로봇)초기 위치 설정 		/initialpose		geometry_msgs/PoseWithCovarianceStamped
 (→로봇)목표 지점 설정 		/goal_pose		geometry_msgs/PoseStamped
 (로봇→)로봇 위치 수신 		/amcl_pose		geometry_msgs/PoseWithCovarianceStamped
-(↔쌍방)로봇 모드 변경		/robot_mode		std_msgs/String		["AUTO", "MANUAL"]
+(↔쌍방)로봇 모드 변경		/robot_mode		std_msgs/String		["auto", "manual", "follow"]
 (→로봇)주행 알고리즘 		/select_controller	std_msgs/String 	["RPP", "SAFE", "ACK"]
 (→로봇)수동 조작		/remote_control		std_msgs/String		["f", "b", "l", "r", "s"]
 (로봇→)상태 메시지		/robot_state		std_msgs/String
@@ -55,8 +55,17 @@ IoT 허브 -> 서버
 - 토픽명: `smartfarm/{region_id}/robot/telemetry/{robot_id}/state`
 
 #### 2-1-2. 동작 모드
-<-로봇<-
+(Command, 웹 -> 로봇)
 - 토픽명: `smartfarm/{region_id}/robot/command/{robot_id}/robot_mode`
+- 페이로드: json string {
+    "data": (string) "auto" | "manual" | "follow"
+}
+
+(Telemetry, 로봇 -> 웹)
+- 토픽명: `smartfarm/{region_id}/robot/telemetry/{robot_id}/robot_mode`
+- 페이로드: json string {
+    "data": (string) "auto" | "manual" | "follow"
+}
 
 #### 2-1-3. 지도 선택
 파이<-

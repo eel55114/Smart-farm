@@ -896,10 +896,45 @@ class DBManager:
             session.commit()
 
             return None
-
         except Exception as e:
             session.rollback()
             return e
+
+    def get_all_plant_types(self) -> tuple[list[dict], Exception | None]:
+        """모든 작물 유형 정보를 가져옵니다.
+
+        Returns:
+            tuple[result, error]:
+                - result (list[dict]): 각 딕셔너리는 {"id": int, "name": str} 형태
+                - error (Exception | None): 발생한 에러
+        """
+        session = self.session_local()
+        try:
+            stmt = select(schema.PlantType)
+            data = session.scalars(stmt).all()
+            result = [{"id": d.id, "name": d.name} for d in data]
+            return result, None
+        except Exception as e:
+            session.rollback()
+            return [], e
+
+    def get_all_sensor_types(self) -> tuple[list[dict], Exception | None]:
+        """모든 센서 유형 정보를 가져옵니다.
+
+        Returns:
+            tuple[result, error]:
+                - result (list[dict]): 각 딕셔너리는 {"id": int, "name": str} 형태
+                - error (Exception | None): 발생한 에러
+        """
+        session = self.session_local()
+        try:
+            stmt = select(schema.SensorType)
+            data = session.scalars(stmt).all()
+            result = [{"id": d.id, "name": d.type_name} for d in data]
+            return result, None
+        except Exception as e:
+            session.rollback()
+            return [], e
 
     @contextmanager
     def session_scope(self):

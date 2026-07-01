@@ -72,6 +72,7 @@ class Connector(Node):
         # ROS Subscribers (참조 유지로 GC 방지)
         self._subs = [
             self.create_subscription(String, "/robot_state", self._on_robot_state, 1),
+            self.create_subscription(String, "/robot_mode", self._on_robot_mode, 10),
             self.create_subscription(String, "/battery", self._on_battery, 1),
             self.create_subscription(String, "/robot_log", self._on_robot_log, 10),
             self.create_subscription(
@@ -91,6 +92,14 @@ class Connector(Node):
             json.dumps({"state": msg.data}),
         )
         self.get_logger().info(f"로봇 상태: {msg.data}")
+
+    def _on_robot_mode(self, msg: String) -> None:
+        """ROS /robot_mode → MQTT .../robot_mode"""
+        self.mqtt.publish(
+            self.TOPIC_PREFIX["telemetry"] + "robot_mode",
+            json.dumps({"data": msg.data}),
+        )
+        self.get_logger().info(f"로봇 모드: {msg.data}")
 
     def _on_battery(self, msg: String) -> None:
         """ROS /battery → MQTT .../battery"""

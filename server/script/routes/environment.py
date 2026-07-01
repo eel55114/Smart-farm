@@ -70,43 +70,9 @@ def get_current_sensors():
 def environment():
     db_error = False
 
-    page = request.args.get("page", 1, type=int)
     days = request.args.get("days", 5, type=int)
     region_id = request.args.get("region", type=int)
     regions_filter = [region_id] if region_id else None
-
-    per_page = 15
-    offset = (page - 1) * per_page
-
-    history_records, count, err = db.get_sensor_history(
-        n=per_page, offset=offset, regions=regions_filter
-    )
-    if err is not None:
-        db_error = True
-        history_records = []
-        count = 0
-
-    has_next = (offset + per_page) < count
-    history_data = []
-    history_columns = [
-        "기준 시간",
-        "센서 ID",
-        "센서 유형",
-        "최댓값",
-        "평균값",
-        "최솟값",
-    ]
-
-    for h in history_records:
-        temp = [
-            h.time_bucket.strftime("%Y-%m-%d %H:%M"),
-            h.sensor_id,
-            h.sensor_type_name,
-            round(h.max, 2),
-            round(h.avg, 2),
-            round(h.min, 2),
-        ]
-        history_data.append(temp)
 
     start_date_str = request.args.get("start_date")
     end_date_str = request.args.get("end_date")
@@ -212,13 +178,7 @@ def environment():
 
     return render_template(
         "environment.html",
-        history_data=history_data,
-        history_columns=history_columns,
-        page=page,
-        has_next=has_next,
         days=days,
         charts_data=json.dumps(charts_data),
         db_error=db_error,
-        count=count,
-        per_page=per_page,
     )
