@@ -133,13 +133,7 @@ def robot_manual_control() -> str:
     robot_error = False
     error_target = ""
 
-    page = request.args.get("page", 1, type=int)
-    per_page = 15
-    offset = (page - 1) * per_page
-
     region_id = request.args.get("region", type=int)
-    regions_filter = [region_id] if region_id else None
-
     robot_id = request.args.get("robot", type=int)
 
     robots, _ = db.get_current_robot()
@@ -156,8 +150,7 @@ def robot_manual_control() -> str:
         default_robot = min(valid_robots, key=lambda r: r.id)
         robot_id = default_robot.id
 
-    is_manual = False
-    # todo: 로봇 3모드로 개편
+    robot_mode = "auto"
 
     # 현재 로봇 상태 및 배터리 초기값 조회
     current_state = '-'
@@ -167,32 +160,6 @@ def robot_manual_control() -> str:
         if robots_found:
             current_state = robots_found[0].state or '-'
 
-    robot_histories, count, err = db.get_robot_history(
-        n=per_page,
-        offset=offset,
-        robot_ids=[robot_id] if robot_id else None,
-        regions=regions_filter,
-    )
-    if err is not None:
-        db_error = True
-        robot_histories = []
-        has_next = False
-    else:
-        has_next = (offset + per_page) < count
-
-    table_name = "로봇 상태 이력"
-    history_columns = ["이력 ID", "일시", "상태"]
-    history_data = []
-
-    for h in robot_histories:
-        history_data.append(
-            [
-                h.id,
-                h.created_at,
-                h.state,
-            ]
-        )
-
     error_target += "로봇" if robot_error else ""
     error_target += "및" if robot_error and db_error else ""
     error_target += "데이터베이스" if db_error else ""
@@ -201,12 +168,7 @@ def robot_manual_control() -> str:
         "robot_manual_control.html",
         connection_error=connection_error,
         error_target=error_target,
-        table_name=table_name,
-        history_columns=history_columns,
-        history_data=history_data,
-        page=page,
-        has_next=has_next,
-        is_manual=is_manual,
+        robot_mode=robot_mode,
         current_state=current_state,
         current_battery=current_battery,
     )
@@ -214,18 +176,22 @@ def robot_manual_control() -> str:
 
 @robot_bp.route("/api/change_robot_state")
 def change_robot_state() -> tuple[str, int]:
-    is_manual_val = request.args.get("is_manual", type=int)
+    mode = request.args.get("mode", type=str)
     robot_id = request.args.get("robot", type=int)
 
-    if robot_id is not None:
-        state_str = "수동 제어" if is_manual_val == 1 else "대기 중"
-        # 로봇 상태 DB 업데이트
+    if robot_id is not None and mode in ("auto", "manual", "follow"):
+        region_id = None
         robots_found, _ = db.get_current_robot(robot_ids=[robot_id])
         if robots_found:
-            robot = robots_found[0]
-            robot.state = state_str
-            db.update_robot([robot])
-            print(f"[Change Robot State] Robot ID={robot_id} updated to: {state_str}")
+            region_id = robots_found[0].region_id
+        if region_id is None:
+            region_id = 1
+
+        connector = current_app.config.get("MQTT_CONNECTOR")
+        if connector:
+            topic = f"smartfarm/{region_id}/robot/command/{robot_id}/robot_mode"
+            connector.publish(topic, {"data": mode})
+            print(f"[Change Robot Mode] Robot ID={robot_id} command published to MQTT: {mode}")
 
     return "", 200
 

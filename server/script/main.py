@@ -17,6 +17,7 @@ from routes.environment import environment_bp
 from routes.home import home_bp
 from routes.plants import plants_bp
 from routes.robot import robot_bp
+from routes.logs import logs_bp
 
 # from state import FrameStore, RobotStateStore
 
@@ -80,6 +81,7 @@ app.register_blueprint(home_bp)
 app.register_blueprint(plants_bp)
 app.register_blueprint(environment_bp)
 app.register_blueprint(robot_bp)
+app.register_blueprint(logs_bp)
 
 
 @app.context_processor
