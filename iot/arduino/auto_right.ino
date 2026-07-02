@@ -75,8 +75,8 @@ unsigned long pump1_start_time = 0;
 unsigned long pump2_start_time = 0;
 bool is_pumping1 = false;
 bool is_pumping2 = false;
-const unsigned long PUMP_RUN_TIME = 2000;   // 3초간 물 주기
-const unsigned long PUMP_COOLDOWN = 15000;  // 10초간 스며들기 대기1
+const unsigned long PUMP_RUN_TIME = 2000;   // 2초간 물 주기
+const unsigned long PUMP_COOLDOWN = 180000;  // 3분간 스며들기 대기1
 
 DHT dht(dht_pin, DHTTYPE);
 
