@@ -34,36 +34,9 @@ def plants():
             plant.maturity = max(min(round(plant.maturity * 100, 1), 100), 0)
             status_data[type_name].append(plant)
 
-    page = request.args.get("page", 1, type=int)
     days = request.args.get("days", 5, type=int)
 
     type_ids = list(types.keys())
-
-    per_page = 15
-    offset = (page - 1) * per_page
-
-    history_records, count, err = db.get_plant_statistics(
-        type_ids=type_ids, n=per_page, offset=offset, regions=regions_filter
-    )
-    if err is not None:
-        db_error = True
-        history_records = []
-        count = 0
-
-    has_next = (offset + per_page) < count
-    history_data = []
-    history_columns = ["이력 ID", "일시", "작물 종류", "평균 성장도", "병충해 피해율"]
-
-    for h in history_records:
-        temp = [
-            h.id,
-            h.created_at.strftime("%Y-%m-%d %H:%M"),
-            types.get(h.type_id, "Unknown"),
-            f"{round(h.avg_maturity * 100, 2)}%",
-            f"{round(h.disease_ratio * 100, 2)}%",
-        ]
-
-        history_data.append(temp)
 
     latest_records, _, err = db.get_plant_statistics(type_ids=type_ids, n=1, regions=regions_filter)
     if err is not None:
@@ -163,13 +136,7 @@ def plants():
     return render_template(
         "plants.html",
         status_data=status_data,
-        history_data=history_data,
-        history_columns=history_columns,
-        page=page,
-        has_next=has_next,
         days=days,
         charts_data=json.dumps(charts_data),
         db_error=db_error,
-        count=count,
-        per_page=per_page,
     )

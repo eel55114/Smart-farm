@@ -1,4 +1,5 @@
 import json
+import math
 import pathlib
 
 from db_instance import db
@@ -19,14 +20,42 @@ def robot_schedule():
 
 @robot_bp.route("/robot/settings")
 def robot_settings():
-    # 플레이스홀더 고정 설정 데이터 반환 (신규 규격 반영)
-    default_settings = {
-        "algorithm": "RPP",
-        "rpp": {"speed": 0.12, "rotation_speed": 0.50, "obstacle_dist": 0.80},
-        "safe": {"speed": 0.10, "rotation_speed": 0.30, "obstacle_dist": 0.60},
-        "ack": {"speed": 0.16, "rotation_speed": 0.80, "obstacle_dist": 0.50},
-    }
-    return render_template("robot_settings.html", settings=default_settings)
+    robot_id = request.args.get("robot", type=int)
+
+    # DB에서 파라미터 조회 (없으면 기본값 사용)
+    settings = None
+    if robot_id is not None:
+        param, _ = db.get_robot_parameter(robot_id)
+        if param is not None:
+            settings = {
+                "algorithm": param.controller,
+                "rpp":  {
+                    "speed":          param.rpp.get("speed",     0.12),
+                    "goal_tolerance": param.rpp.get("tolerance", 0.10),
+                    "obstacle_dist":  param.rpp.get("inflation", 0.80),
+                },
+                "safe": {
+                    "speed":          param.safe.get("speed",     0.10),
+                    "goal_tolerance": param.safe.get("tolerance", 0.10),
+                    "obstacle_dist":  param.safe.get("inflation", 0.60),
+                },
+                "ack":  {
+                    "speed":          param.ack.get("speed",     0.16),
+                    "goal_tolerance": param.ack.get("tolerance", 0.10),
+                    "obstacle_dist":  param.ack.get("inflation", 0.50),
+                },
+            }
+
+    if settings is None:
+        # DB 데이터 없으면 기본값
+        settings = {
+            "algorithm": "RPP",
+            "rpp":  {"speed": 0.12, "goal_tolerance": 0.10, "obstacle_dist": 0.80},
+            "safe": {"speed": 0.10, "goal_tolerance": 0.10, "obstacle_dist": 0.60},
+            "ack":  {"speed": 0.16, "goal_tolerance": 0.10, "obstacle_dist": 0.50},
+        }
+
+    return render_template("robot_settings.html", settings=settings)
 
 
 @robot_bp.route("/api/robot_settings", methods=["POST"])
@@ -36,6 +65,64 @@ def save_robot_settings():
     print(
         f"[Robot Settings Save] Robot ID={robot_id} - Received config parameters: {data}"
     )
+
+    if robot_id is not None:
+        # region_id 조회
+        region_id = None
+        robots_found, _ = db.get_current_robot(robot_ids=[robot_id])
+        if robots_found:
+            region_id = robots_found[0].region_id
+        if region_id is None:
+            region_id = 1
+
+        connector = current_app.config.get("MQTT_CONNECTOR")
+        if connector:
+            # 브라우저 payload 키 → ROS /publish_param 규격으로 변환
+            # goal_tolerance → tolerance, obstacle_dist → inflation
+            # mode 키(rpp/safe/ack) → 대문자 콘트롤러명(RPP/SAFE/ACK)
+            mode_map = {"rpp": "RPP", "safe": "SAFE", "ack": "ACK"}
+            controllers = {}
+            for mode_lower, mode_upper in mode_map.items():
+                cfg = data.get(mode_lower, {})
+                controllers[mode_upper] = {
+                    "speed":     cfg.get("speed", 0.0),
+                    "tolerance": cfg.get("goal_tolerance", 0.0),
+                    "inflation": cfg.get("obstacle_dist", 0.0),
+                }
+
+            ros_payload = {
+                "controllers":         controllers,
+                "current_controller":  data.get("algorithm", "RPP"),
+            }
+
+            topic = f"smartfarm/{region_id}/robot/command/{robot_id}/publish_param"
+            connector.publish(topic, ros_payload)
+
+        # DB에 파라미터 저장 (upsert)
+        from db_manager import datatype as dt
+        param = dt.RobotParameter(
+            robot_id=robot_id,
+            controller=data.get("algorithm", "RPP"),
+            rpp={
+                "speed":     data.get("rpp", {}).get("speed", 0.12),
+                "tolerance": data.get("rpp", {}).get("goal_tolerance", 0.10),
+                "inflation": data.get("rpp", {}).get("obstacle_dist", 0.80),
+            },
+            safe={
+                "speed":     data.get("safe", {}).get("speed", 0.10),
+                "tolerance": data.get("safe", {}).get("goal_tolerance", 0.10),
+                "inflation": data.get("safe", {}).get("obstacle_dist", 0.60),
+            },
+            ack={
+                "speed":     data.get("ack", {}).get("speed", 0.16),
+                "tolerance": data.get("ack", {}).get("goal_tolerance", 0.10),
+                "inflation": data.get("ack", {}).get("obstacle_dist", 0.50),
+            },
+        )
+        err = db.upsert_robot_parameter(param)
+        if err:
+            print(f"[Robot Settings Save] DB upsert 오류: {err}")
+
     return {"status": "success", "message": "Settings saved successfully"}, 200
 
 
@@ -46,13 +133,7 @@ def robot_manual_control() -> str:
     robot_error = False
     error_target = ""
 
-    page = request.args.get("page", 1, type=int)
-    per_page = 15
-    offset = (page - 1) * per_page
-
     region_id = request.args.get("region", type=int)
-    regions_filter = [region_id] if region_id else None
-
     robot_id = request.args.get("robot", type=int)
 
     robots, _ = db.get_current_robot()
@@ -69,34 +150,15 @@ def robot_manual_control() -> str:
         default_robot = min(valid_robots, key=lambda r: r.id)
         robot_id = default_robot.id
 
-    is_manual = False
-    # todo: 로봇 3모드로 개편
+    robot_mode = "auto"
 
-    robot_histories, count, err = db.get_robot_history(
-        n=per_page,
-        offset=offset,
-        robot_ids=[robot_id] if robot_id else None,
-        regions=regions_filter,
-    )
-    if err is not None:
-        db_error = True
-        robot_histories = []
-        has_next = False
-    else:
-        has_next = (offset + per_page) < count
-
-    table_name = "로봇 상태 이력"
-    history_columns = ["이력 ID", "일시", "상태"]
-    history_data = []
-
-    for h in robot_histories:
-        history_data.append(
-            [
-                h.id,
-                h.created_at,
-                h.state,
-            ]
-        )
+    # 현재 로봇 상태 및 배터리 초기값 조회
+    current_state = '-'
+    current_battery = '-'
+    if robot_id is not None:
+        robots_found, _ = db.get_current_robot(robot_ids=[robot_id])
+        if robots_found:
+            current_state = robots_found[0].state or '-'
 
     error_target += "로봇" if robot_error else ""
     error_target += "및" if robot_error and db_error else ""
@@ -106,29 +168,30 @@ def robot_manual_control() -> str:
         "robot_manual_control.html",
         connection_error=connection_error,
         error_target=error_target,
-        table_name=table_name,
-        history_columns=history_columns,
-        history_data=history_data,
-        page=page,
-        has_next=has_next,
-        is_manual=is_manual,
+        robot_mode=robot_mode,
+        current_state=current_state,
+        current_battery=current_battery,
     )
 
 
 @robot_bp.route("/api/change_robot_state")
 def change_robot_state() -> tuple[str, int]:
-    is_manual_val = request.args.get("is_manual", type=int)
+    mode = request.args.get("mode", type=str)
     robot_id = request.args.get("robot", type=int)
 
-    if robot_id is not None:
-        state_str = "수동 제어" if is_manual_val == 1 else "대기 중"
-        # 로봇 상태 DB 업데이트
+    if robot_id is not None and mode in ("auto", "manual", "follow"):
+        region_id = None
         robots_found, _ = db.get_current_robot(robot_ids=[robot_id])
         if robots_found:
-            robot = robots_found[0]
-            robot.state = state_str
-            db.update_robot([robot])
-            print(f"[Change Robot State] Robot ID={robot_id} updated to: {state_str}")
+            region_id = robots_found[0].region_id
+        if region_id is None:
+            region_id = 1
+
+        connector = current_app.config.get("MQTT_CONNECTOR")
+        if connector:
+            topic = f"smartfarm/{region_id}/robot/command/{robot_id}/robot_mode"
+            connector.publish(topic, {"data": mode})
+            print(f"[Change Robot Mode] Robot ID={robot_id} command published to MQTT: {mode}")
 
     return "", 200
 
@@ -210,4 +273,63 @@ def robot_moveto():
     print(
         f"[Robot MoveTo] Robot ID={robot_id} - Requested movement to physical coordinates: x={x}, y={y}"
     )
+
+    if robot_id is not None and x is not None and y is not None:
+        region_id = None
+        robots_found, _ = db.get_current_robot(robot_ids=[robot_id])
+        if robots_found:
+            region_id = robots_found[0].region_id
+        if region_id is None:
+            region_id = 1
+
+        connector = current_app.config.get("MQTT_CONNECTOR")
+        if connector:
+            topic = f"smartfarm/{region_id}/robot/command/{robot_id}/goal_pose"
+            payload = {
+                "x": x,
+                "y": y,
+                "z": 0.0,
+                "qx": 0.0,
+                "qy": 0.0,
+                "qz": 0.0,
+                "qw": 1.0,
+            }
+            connector.publish(topic, payload)
+
     return {"status": "success", "message": f"Moving to ({x}, {y})"}, 200
+
+
+@robot_bp.route("/api/robot_set_initial_pose", methods=["POST"])
+def robot_set_initial_pose():
+    data = request.get_json() or {}
+    robot_id = data.get("robot") or request.args.get("robot", type=int)
+    x = data.get("x")
+    y = data.get("y")
+    yaw = data.get("yaw")  # radians
+    print(
+        f"[Robot SetInitialPose] Robot ID={robot_id} - x={x}, y={y}, yaw={yaw}"
+    )
+
+    if robot_id is not None and x is not None and y is not None and yaw is not None:
+        region_id = None
+        robots_found, _ = db.get_current_robot(robot_ids=[robot_id])
+        if robots_found:
+            region_id = robots_found[0].region_id
+        if region_id is None:
+            region_id = 1
+
+        connector = current_app.config.get("MQTT_CONNECTOR")
+        if connector:
+            topic = f"smartfarm/{region_id}/robot/command/{robot_id}/initial_pose"
+            payload = {
+                "x": x,
+                "y": y,
+                "z": 0.0,
+                "qx": 0.0,
+                "qy": 0.0,
+                "qz": math.sin(yaw / 2),
+                "qw": math.cos(yaw / 2),
+            }
+            connector.publish(topic, payload)
+
+    return {"status": "success", "message": f"Initial pose set at ({x}, {y}), yaw={yaw}"}, 200

@@ -170,6 +170,38 @@
                         재배 환경
                     </a>
                 </li>
+                <li class="nav-item mb-1">
+                    <a href="/logs/plants{{ ns.region_params }}" 
+                        class="nav-link justify-content-between {{ 'active' if request.path.startswith('/logs') }}">
+                        <span class="d-flex align-items-center">
+                            <span class="material-symbols-outlined me-2">history</span>
+                            로그 조회
+                        </span>
+                        <span class="material-symbols-outlined fs-6 transition-transform {{ 'rotate-180' if request.path.startswith('/logs') }}">expand_more</span>
+                    </a>
+                    <div class="collapse {{ 'show' if request.path.startswith('/logs') }}" id="logsSubmenu">
+                        <ul class="nav flex-column ms-3 mt-1 small">
+                            <li class="nav-item mb-1">
+                                <a href="/logs/plants{{ ns.region_params }}" 
+                                    class="submenu-link {{ 'text-white active-sub' if request.path == '/logs/plants' else 'text-white-50' }}">
+                                    작물 로그
+                                </a>
+                            </li>
+                            <li class="nav-item mb-1">
+                                <a href="/logs/sensors{{ ns.region_params }}" 
+                                    class="submenu-link {{ 'text-white active-sub' if request.path == '/logs/sensors' else 'text-white-50' }}">
+                                    센서 로그
+                                </a>
+                            </li>
+                            <li class="nav-item mb-1">
+                                <a href="/logs/robots{{ ns.region_params }}" 
+                                    class="submenu-link {{ 'text-white active-sub' if request.path == '/logs/robots' else 'text-white-50' }}">
+                                    로봇 로그
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
             </ul>
         </nav>
 

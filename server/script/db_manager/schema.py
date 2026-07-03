@@ -4,6 +4,7 @@ from typing import List
 from sqlalchemy import (
     DateTime,
     ForeignKey,
+    JSON,
     String,
     func,
 )
@@ -151,6 +152,9 @@ class Robot(Base):
 
     region: Mapped["Region"] = relationship(back_populates="robots")
     histories: Mapped[List["RobotHistory"]] = relationship(back_populates="robot")
+    parameters: Mapped[List["RobotParameter"]] = relationship(
+        back_populates="robot", cascade="all, delete-orphan"
+    )
 
 
 class RobotHistory(Base):
@@ -163,3 +167,21 @@ class RobotHistory(Base):
     state: Mapped[str] = mapped_column("state", String(50))
 
     robot: Mapped["Robot"] = relationship(back_populates="histories")
+
+
+class RobotParameter(Base):
+    """robot_parameter 테이블 ORM 모델.
+
+    주행 알고리즘별 파라미터(speed, tolerance, inflation)과
+    현재 활성 콘트롤러를 저장합니다.
+    """
+    __tablename__ = "robot_parameter"
+    robot_id: Mapped[int] = mapped_column(
+        "robot_id", ForeignKey("robot.id"), primary_key=True
+    )
+    controller: Mapped[str] = mapped_column("controller", String(20), default="RPP")
+    rpp:  Mapped[dict] = mapped_column("rpp",  JSON)
+    safe: Mapped[dict] = mapped_column("safe", JSON)
+    ack:  Mapped[dict] = mapped_column("ack",  JSON)
+
+    robot: Mapped["Robot"] = relationship(back_populates="parameters")

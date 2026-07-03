@@ -115,6 +115,17 @@ CREATE TABLE robot(
     FOREIGN KEY (region_id) REFERENCES region(id)
 );
 
+-- 로봇 주행 파라미터
+CREATE TABLE robot_parameter(
+    robot_id    INT         PRIMARY KEY,        -- 로봇 ID
+    controller  VARCHAR(20) NOT NULL DEFAULT 'RPP', -- 현재 활성 주행 알고리즘
+    rpp         JSON        NOT NULL,           -- RPP 모드 파라미터 {speed, tolerance, inflation}
+    safe        JSON        NOT NULL,           -- SAFE 모드 파라미터 {speed, tolerance, inflation}
+    ack         JSON        NOT NULL,           -- ACK 모드 파라미터 {speed, tolerance, inflation}
+
+    FOREIGN KEY (robot_id) REFERENCES robot(id)
+);
+
 -- 로봇 상태 내역
 CREATE TABLE robot_history (
 	id INT PRIMARY KEY AUTO_INCREMENT,                          -- 이력 ID

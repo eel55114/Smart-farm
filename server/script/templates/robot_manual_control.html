@@ -16,7 +16,7 @@
     <!-- 좌측(맵) -->
     <div class="col-md-6 mb-4">
         <div class="content-card mb-4 h-100 d-flex flex-column">
-            <h4 class="mb-3 text-primary border-bottom pb-2">로봇 조작</h4>
+            <h4 class="mb-3 text-primary border-bottom pb-2">실시간 지도 및 이동</h4>
             
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <button id="btn-moveto" class="btn btn-primary btn-sm fw-bold px-3 py-2 shadow-sm border-0" disabled>위치로 이동</button>
@@ -43,7 +43,7 @@
         <!-- 로봇 카메라 -->
         <div class="content-card mb-4 h-100">
 
-            <h4 class="mb-3 text-primary border-bottom pb-2">로봇 조작</h4>
+            <h4 class="mb-3 text-primary border-bottom pb-2">카메라 및 수동 조작</h4>
             <div class="row g-2">
                 <div class="col-6">
                     <div class="position-relative border rounded bg-dark text-center overflow-hidden">
@@ -63,19 +63,32 @@
 
             </div>
 
-            <!-- 조작 및 상태부 -->
-            <div class="d-flex justify-content-center align-items-center mt-2 mb-3 fs-5 fw-bold">
-                <span class="me-3 {% if not is_manual %}text-primary{% endif %}" id="autoLabel">자동 모드</span>
-                <div class="form-check form-switch fs-3 mb-0">
-                    <input class="form-check-input" type="checkbox" role="switch" id="modeSwitch" {% if is_manual
-                        %}checked{% endif %}>
+            <!-- 조작 및 상태부 (Trinary Mode Selector) -->
+            <div class="d-flex flex-column align-items-center mt-2 mb-3">
+                <div class="btn-group shadow-sm" role="group" aria-label="Robot Mode Selector">
+                    <input type="radio" class="btn-check" name="robotMode" id="mode-auto" value="auto" autocomplete="off" {% if robot_mode == 'auto' %}checked{% endif %}>
+                    <label class="btn btn-outline-primary fw-bold d-inline-flex align-items-center gap-2" for="mode-auto">
+                        <span class="material-symbols-outlined fs-5">navigation</span>
+                        자동
+                    </label>
+
+                    <input type="radio" class="btn-check" name="robotMode" id="mode-manual" value="manual" autocomplete="off" {% if robot_mode == 'manual' %}checked{% endif %}>
+                    <label class="btn btn-outline-primary fw-bold d-inline-flex align-items-center gap-2" for="mode-manual">
+                        <span class="material-symbols-outlined fs-5">sports_esports</span>
+                        수동
+                    </label>
+
+                    <input type="radio" class="btn-check" name="robotMode" id="mode-follow" value="follow" autocomplete="off" {% if robot_mode == 'follow' %}checked{% endif %}>
+                    <label class="btn btn-outline-primary fw-bold d-inline-flex align-items-center gap-2" for="mode-follow">
+                        <span class="material-symbols-outlined fs-5">person_pin</span>
+                        인물추종
+                    </label>
                 </div>
-                <span class="ms-3 {% if is_manual %}text-primary{% endif %}" id="manualLabel">수동 모드</span>
             </div>
 
             <div class="row align-items-center">
                 <!-- 방향 버튼 -->
-                <div class="col-7 {% if not is_manual %}opacity-50 pe-none{% endif %}" id="dpadControl">
+                <div class="col-7 {% if robot_mode != 'manual' %}opacity-50 pe-none{% endif %}" id="dpadControl">
                     <div class="row gx-2 gy-2 mx-auto" style="max-width: 250px;">
                         <div class="col-4 d-flex align-items-start justify-content-start">
                             <button data-info="Home"
@@ -111,8 +124,7 @@
 
                 <!-- 상태 표시창 -->
                 <div class="col-5">
-                    <div id="state-container" hx-get="/api/current_robot_state{% if current_region or current_robot %}?{% if current_region %}region={{ current_region }}{% if current_robot %}&{% endif %}{% endif %}{% if current_robot %}robot={{ current_robot }}{% endif %}{% endif %}" hx-trigger="load, every 1s"
-                        hx-swap="innerHTML">
+                    <div id="state-container">
                         {% include '_robot_state.html' %}
                     </div>
                 </div>
@@ -123,346 +135,12 @@
         <script src="{{ url_for('static', filename='js/map_utils.js') }}"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
         <script>
-            // 이미지 갱신
-            const socket = io();
-
-            function updateImage(elementId, arrayBuffer) {
-                const imgElement = document.getElementById(elementId);
-                
-                if (!imgElement) {
-                    return;
-                }
-
-                const blob = new Blob([new Uint8Array(arrayBuffer)], { type: "image/jpeg" });
-                const urlCreator = window.URL || window.webkitURL;
-                const imageUrl = urlCreator.createObjectURL(blob);
-
-                imgElement.onload = function() {
-                    urlCreator.revokeObjectURL(imageUrl);
-                };
-
-                imgElement.src = imageUrl;
-            }
-
-            let frontInfo = {
-                lastSignal: performance.now(),
-                lastRenew: -1500,
-                deque: new Array(),
-                elem: document.querySelector("#framerate_front")
-            }
-
-            let sideInfo = {
-                lastSignal: performance.now(),
-                lastRenew: -1500,
-                deque: new Array(),
-                elem: document.querySelector("#framerate_side")
-            }
-
-            function updateInfo(info) {
-                const now = performance.now();
-                const gap = now - info.lastSignal;
-                info.deque.push(gap);
-                if (info.deque.length > 20) {
-                    info.deque.shift();
-                }
-                const meanGap = info.deque.reduce((x,y) => x+y)/info.deque.length;
-                if (now - info.lastRenew > 500) {
-                    const round = meanGap < 1000 ? 0 : 1;
-                    info.elem.innerText = (1000/meanGap).toFixed(round);
-                    info.lastRenew = now;
-                }
-                info.lastSignal = now;
-            }
-
-            socket.on('render_front', function(data) {
-                updateImage('img_front', data);
-                updateInfo(frontInfo);
-            });
-
-            socket.on('render_side', function(data) {
-                updateImage('img_side', data);
-                updateInfo(sideInfo);
-            });
-
-            // --- Fabric.js 기반 로봇 맵 시각화 및 제어 ---
-            let canvas;
-            let mapWidth = 0;
-            let mapHeight = 0;
-            let mapResolution = 0.05;
-            let mapOriginX = 0;
-            let mapOriginY = 0;
-            let currentMarker = null;
-            let mapImageObject = null;
-            let minZoom = 0.1;
-
-            function updateMarkerScale() {
-                if (canvas && currentMarker) {
-                    const zoom = canvas.getZoom();
-                    currentMarker.set({
-                        scaleX: 1 / zoom,
-                        scaleY: 1 / zoom
-                    });
-                }
-            }
-
-            function current_robot_map() {
-                fetch('/api/robot_current_map')
-                    .then(response => response.json())
-                    .then(data => {
-                        mapWidth = data.width;
-                        mapHeight = data.height;
-                        mapResolution = data.resolution || 0.05;
-                        if (data.origin) {
-                            mapOriginX = data.origin[0];
-                            mapOriginY = data.origin[1];
-                        } else {
-                            mapOriginX = - (mapWidth * mapResolution) / 2;
-                            mapOriginY = - (mapHeight * mapResolution) / 2;
-                        }
-
-                        const array = data.array;
-                        const dataUrl = drawOccupancyGrid(mapWidth, mapHeight, array);
-
-                        if (currentMarker) {
-                            canvas.remove(currentMarker);
-                            currentMarker = null;
-                            document.getElementById('btn-moveto').disabled = true;
-                        }
-                        if (mapImageObject) {
-                            canvas.remove(mapImageObject);
-                        }
-
-                        fabric.Image.fromURL(dataUrl, function(img) {
-                            mapImageObject = img;
-                            img.set({
-                                left: 0,
-                                top: 0,
-                                selectable: false,
-                                hoverCursor: 'default',
-                                imageSmoothing: false
-                            });
-                            canvas.add(img);
-                            canvas.sendToBack(img);
-                            resetMapViewport();
-                        });
-                    })
-                    .catch(err => {
-                        console.error('Error fetching map:', err);
-                    });
-            }
-
-            function resetMapViewport() {
-                if (!mapImageObject) return;
-                const scaleX = canvas.width / mapWidth;
-                const scaleY = canvas.height / mapHeight;
-                minZoom = Math.min(scaleX, scaleY) * 0.95;
-
-                const vpt = canvas.viewportTransform;
-                vpt[0] = minZoom;
-                vpt[3] = minZoom;
-                vpt[4] = (canvas.width - mapWidth * minZoom) / 2;
-                vpt[5] = (canvas.height - mapHeight * minZoom) / 2;
-
-                canvas.setViewportTransform(vpt);
-                constrainViewport(canvas, mapImageObject, mapWidth, mapHeight);
-                updateMarkerScale();
-                updateScaleBar(canvas, mapImageObject, mapResolution);
-                canvas.requestRenderAll();
-            }
-
-            // 공통 DOM 로드 바인딩
-            document.addEventListener("DOMContentLoaded", function () {
-                // 1. 모드 스위치 처리
-                const modeSwitch = document.getElementById("modeSwitch");
-                const dpadControl = document.getElementById("dpadControl");
-                const autoLabel = document.getElementById("autoLabel");
-                const manualLabel = document.getElementById("manualLabel");
-
-                if (modeSwitch) {
-                    modeSwitch.addEventListener("change", function () {
-                        if (this.checked) {
-                            // 수동 모드
-                            dpadControl.classList.remove("opacity-50", "pe-none");
-                            manualLabel.classList.add("text-primary");
-                            autoLabel.classList.remove("text-primary");
-                            fetch(`/api/change_robot_state?is_manual=1&robot={{ current_robot if current_robot else 'null' }}`);
-                        } else {
-                            // 자동 모드
-                            dpadControl.classList.add("opacity-50", "pe-none");
-                            autoLabel.classList.add("text-primary");
-                            manualLabel.classList.remove("text-primary");
-                            fetch(`/api/change_robot_state?is_manual=0&robot={{ current_robot if current_robot else 'null' }}`);
-                        }
-                    });
-                }
-
-                // 2. 방향 패드 처리
-                const controlBtns = document.querySelectorAll(".robot-control");
-                controlBtns.forEach(btn => {
-                    btn.addEventListener("click", function () {
-                        const data = this.getAttribute('data-info');
-                        fetch(`/api/control_robot?direction=${data}&robot={{ current_robot if current_robot else 'null' }}`);
-                    });
-                });
-
-                // 3. Fabric 캔버스 설정
-                const canvasContainer = document.getElementById('map').parentElement;
-                canvas = new fabric.Canvas('map', {
-                    width: canvasContainer.clientWidth,
-                    height: canvasContainer.clientHeight,
-                    selection: false,
-                    fireRightClick: true,  // 우클릭 드래그 이벤트 감지 활성화
-                    fireMiddleClick: true  // 휠클릭 드래그 이벤트 감지 활성화
-                });
-
-                window.addEventListener('resize', function() {
-                    if (canvas && canvasContainer) {
-                        canvas.setWidth(canvasContainer.clientWidth);
-                        canvas.setHeight(canvasContainer.clientHeight);
-                        resetMapViewport();
-                    }
-                });
-
-                // 마우스 휠 줌
-                canvas.on('mouse:wheel', function(opt) {
-                    const delta = opt.e.deltaY;
-                    let zoom = canvas.getZoom();
-                    zoom *= 0.999 ** delta;
-                    if (zoom > 50) zoom = 50;
-                    if (zoom < minZoom) zoom = minZoom;
-                    canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
-                    constrainViewport(canvas, mapImageObject, mapWidth, mapHeight);
-                    updateMarkerScale();
-                    updateScaleBar(canvas, mapImageObject, mapResolution);
-                    opt.e.preventDefault();
-                    opt.e.stopPropagation();
-                });
-
-                // 우클릭/휠클릭/Alt+드래그 패닝
-                let isDragging = false;
-                let lastPosX, lastPosY;
-
-                canvas.on('mouse:down', function(opt) {
-                    const evt = opt.e;
-                    // 우클릭(2), 휠클릭(1), 혹은 Alt+좌클릭 드래그 지원
-                    if (evt.button === 2 || evt.button === 1) {
-                        isDragging = true;
-                        canvas.selection = false;
-                        lastPosX = evt.clientX;
-                        lastPosY = evt.clientY;
-                        opt.e.preventDefault();
-                        opt.e.stopPropagation();
-                    }
-                });
-
-                canvas.on('mouse:move', function(opt) {
-                    if (isDragging) {
-                        const e = opt.e;
-                        const vpt = canvas.viewportTransform;
-                        vpt[4] += e.clientX - lastPosX;
-                        vpt[5] += e.clientY - lastPosY;
-                        constrainViewport(canvas, mapImageObject, mapWidth, mapHeight);
-                        canvas.requestRenderAll();
-                        lastPosX = e.clientX;
-                        lastPosY = e.clientY;
-                    }
-                });
-
-                canvas.on('mouse:up', function() {
-                    canvas.setViewportTransform(canvas.viewportTransform);
-                    isDragging = false;
-                });
-
-                canvas.upperCanvasEl.addEventListener('contextmenu', function(e) {
-                    e.preventDefault();
-                    return false;
-                });
-
-                // 지도 클릭 마커 지정
-                canvas.on('mouse:down', function(opt) {
-                    const evt = opt.e;
-                    // 우클릭(2), 휠클릭(1), 혹은 Alt 키 드래그 상태인 경우 마커 지정을 건너뜀
-                    if (evt.button === 2 || evt.button === 1) {
-                        return;
-                    }
-
-                    if (opt.target && opt.target.name === 'goal-marker') {
-                        canvas.remove(opt.target);
-                        currentMarker = null;
-                        document.getElementById('btn-moveto').disabled = true;
-                        canvas.renderAll();
-                        return;
-                    }
-
-                    const pointer = canvas.getPointer(evt);
-                    const px = pointer.x;
-                    const py = pointer.y;
-
-                    if (px >= 0 && px <= mapWidth && py >= 0 && py <= mapHeight) {
-                        if (currentMarker) {
-                            canvas.remove(currentMarker);
-                        }
-
-                        const zoom = canvas.getZoom();
-                        const pathString = `M -5 0 C 0 10, 0 10, 5 0 C 17 -22, -17 -22, -5 0 Z`;
-
-                        currentMarker = new fabric.Path(pathString, {
-                            fill: 'rgba(150,200,255, 0.5)',
-                            stroke: 'rgba(12, 104, 239, 1.0)',
-                            strokeWidth: 3,
-                            name: 'goal-marker',
-                            originX: 'center',
-                            originY: 'bottom',
-                            scaleX: 1 / zoom,
-                            scaleY: 1 / zoom,
-                            left: px,
-                            top: py
-                        });
-
-                        canvas.add(currentMarker);
-                        canvas.renderAll();
-                        document.getElementById('btn-moveto').disabled = false;
-                    }
-                });
-
-                // 초기 지도 렌더링
-                current_robot_map();
-
-                // '위치로 이동' 액션
-                document.getElementById('btn-moveto').addEventListener('click', function() {
-                    if (!currentMarker) return;
-
-                    const px = currentMarker.left;
-                    const py = currentMarker.top;
-                    
-                    const mx = px * mapResolution + mapOriginX;
-                    const my = (mapHeight - py) * mapResolution + mapOriginY;
-
-                    fetch('/api/robot_moveto', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ x: mx, y: my, robot: {{ current_robot if current_robot else 'null' }} })
-                    })
-                    .then(res => res.json())
-                    .then(data => {})
-                    .catch(err => {
-                        console.error('Error sending move command:', err);
-                    });
-                });
-
-                // '새로고침' 액션
-                document.getElementById('btn-refresh-map').addEventListener('click', function() {
-                    current_robot_map();
-                });
-
-                // '초기 위치 지정' 액션
-                document.getElementById('btn-set-initial').addEventListener('click', function() {
-                    // 기능 미정
-                });
-            });
+            // 외부 스크립트에서 사용하기 위해 Jinja 템플릿 변수를 글로벌 객체로 노출
+            const ROBOT_CONFIG = {
+                currentRobotId: "{{ current_robot if current_robot else 'null' }}"
+            };
         </script>
+        <script src="{{ url_for('static', filename='js/robot_manual_control.js') }}"></script>
 
     </div>
 </div>

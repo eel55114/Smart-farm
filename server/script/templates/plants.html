@@ -13,13 +13,11 @@
 </div>
 {% endif %}
 <div class="row">
-    <!-- 좌측(작물 상태+작물 그래프) -->
+    <!-- 좌측 (작물 상태) -->
     <div class="col-md-6 mb-4">
-
-        <!-- 좌상단(작물 상태) -->
-        <div class="content-card mb-4">
+        <div class="content-card h-100">
             <h4 class="mb-3 text-primary border-bottom pb-2">작물 상태</h4>
-            <div class="scrollable-container overflow-y-auto overflow-x-hidden pe-2" style="max-height: 300px;">
+            <div class="scrollable-container overflow-y-auto overflow-x-hidden pe-2" style="max-height: 400px;">
                 {% for plant_type, plants in status_data.items() %}
                 <h5 class="mt-3 mb-2 text-secondary">{{ plant_type }}</h5>
                 <div class="row row-cols-2 row-cols-md-3 g-2 mb-3">
@@ -50,20 +48,13 @@
                 {% endfor %}
             </div>
         </div>
-
-        <!-- 좌하단(작물 그래프) -->
-        <div class="content-card">
-            {{ chart_viewer.render_charts('작물 그래프', request.endpoint, days, page, charts_data) }}
-        </div>
-
     </div>
 
-    <!-- 우측(작물 이력)-->
+    <!-- 우측 (작물 그래프) -->
     <div class="col-md-6 mb-4">
-        <!-- 우상하단(작물 이력) -->
-        {% set table_name = '작물 이력' %}
-        {{ logs_viewer.render_items(table_name, history_columns, history_data, page, has_next,
-        endpoint=request.endpoint, count=count, per_page=per_page, days=days) }}
+        <div class="content-card h-100">
+            {{ chart_viewer.render_charts('작물 그래프', request.endpoint, days, 1, charts_data) }}
+        </div>
     </div>
 </div>
 {% endblock %}

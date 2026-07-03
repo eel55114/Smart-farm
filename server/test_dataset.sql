@@ -142,3 +142,21 @@ insert into robot_history(id, created_at, robot_id, state) values
 (2, '2026-06-11 10:30:00', 2, "대기 중"),
 (3, '2026-06-11 11:00:00', 2, "작업 중"),
 (4, '2026-06-11 10:00:00', 3, "대기 중");
+
+-- 12. 로봇 주행 파라미터 초기화
+insert into robot_parameter(robot_id, controller, rpp, safe, ack) values
+(1, 'RPP',
+    '{"speed": 0.12, "tolerance": 0.10, "inflation": 0.80}',
+    '{"speed": 0.10, "tolerance": 0.10, "inflation": 0.60}',
+    '{"speed": 0.16, "tolerance": 0.10, "inflation": 0.50}'
+),
+(2, 'SAFE',
+    '{"speed": 0.12, "tolerance": 0.10, "inflation": 0.80}',
+    '{"speed": 0.10, "tolerance": 0.10, "inflation": 0.60}',
+    '{"speed": 0.16, "tolerance": 0.10, "inflation": 0.50}'
+),
+(3, 'RPP',
+    '{"speed": 0.12, "tolerance": 0.10, "inflation": 0.80}',
+    '{"speed": 0.10, "tolerance": 0.10, "inflation": 0.60}',
+    '{"speed": 0.16, "tolerance": 0.10, "inflation": 0.50}'
+);

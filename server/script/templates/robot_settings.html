@@ -6,18 +6,18 @@
 {% set algorithms = [
     {
         'id': 'rpp',
-        'name': 'RPP',
-        'desc': 'RPP (Regulated Pure Pursuit): 목표까지 최단 경로에 가깝게 이동하는 표준적인 주행 방식입니다.'
+        'name': 'FAST',
+        'desc': '목표까지 최단 경로에 가깝게 이동하는 표준적인 주행 방식입니다.'
     },
     {
         'id': 'safe',
         'name': 'SAFE',
-        'desc': 'SAFE (TEB, Timed Elastic Band): 장애물을 부드럽게 회피하는 주행 방식으로 장애물이 많거나 경로가 복잡한 장소에 적합합니다.'
+        'desc': '장애물을 부드럽게 회피하는 주행 방식으로 장애물이 많거나 경로가 복잡한 장소에 적합합니다.'
     },
     {
         'id': 'ack',
-        'name': 'ACK',
-        'desc': 'ACK (Ackermann Steering): 제자리 회전을 지양하는 주행 방식으로 후방 적치물이 많을 때 적합합니다.'
+        'name': 'STABLE',
+        'desc': '제자리 회전을 지양하는 주행 방식으로 후방 적치물이 많을 때 적합합니다.'
     }
 ] %}
 
@@ -64,31 +64,30 @@
                 </div>
             </div>
 
-            <!-- 블록 2~4: RPP, SAFE, ACK 옵션 (Jinja 루프로 동적 렌더링) -->
-            {% for mode in ['rpp', 'safe', 'ack'] %}
+            {% for algo in algorithms %}
             <div class="content-card mb-4">
-                <h4 class="mb-3 text-primary border-bottom pb-2 d-flex align-items-center">{{ mode | upper }} 모드 세부 설정</h4>
+                <h4 class="mb-3 text-primary border-bottom pb-2 d-flex align-items-center">{{ algo.name }} 모드 세부 설정</h4>
                 <div class="row g-4">
                     <div class="col-md-4">
                         <label class="form-label d-flex justify-content-between align-items-center">
                             <span>이동 속도</span>
-                            <span class="badge bg-secondary fs-6" id="{{ mode }}-speed-val">0.00 m/s</span>
+                            <span class="badge bg-secondary fs-6" id="{{ algo.id }}-speed-val">0.00 m/s</span>
                         </label>
-                        <input type="range" class="form-range settings-slider" id="{{ mode }}-speed" min="0.08" max="0.24" step="0.02" disabled>
+                        <input type="range" class="form-range settings-slider" id="{{ algo.id }}-speed" min="0.08" max="0.24" step="0.02" disabled>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label d-flex justify-content-between align-items-center">
-                            <span>회전 속도</span>
-                            <span class="badge bg-secondary fs-6" id="{{ mode }}-rot-val">0.00 rad/s</span>
+                            <span>이동 허용 오차</span>
+                            <span class="badge bg-secondary fs-6" id="{{ algo.id }}-tol-val">0 cm</span>
                         </label>
-                        <input type="range" class="form-range settings-slider" id="{{ mode }}-rot" min="0.05" max="1.80" step="0.05" disabled>
+                        <input type="range" class="form-range settings-slider" id="{{ algo.id }}-tol" min="5" max="15" step="1" disabled>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label d-flex justify-content-between align-items-center">
                             <span>장애물 인식 거리</span>
-                            <span class="badge bg-secondary fs-6" id="{{ mode }}-dist-val">0 cm</span>
+                            <span class="badge bg-secondary fs-6" id="{{ algo.id }}-dist-val">0 cm</span>
                         </label>
-                        <input type="range" class="form-range settings-slider" id="{{ mode }}-dist" min="0.05" max="1.0" step="0.05" disabled>
+                        <input type="range" class="form-range settings-slider" id="{{ algo.id }}-dist" min="5" max="100" step="5" disabled>
                     </div>
                 </div>
             </div>
@@ -112,16 +111,17 @@
     // DOM 요소 캐싱 동적 처리 (슬라이더 관련)
     modes.forEach(mode => {
         elements[mode] = {
-            speed: document.getElementById(`${mode}-speed`),
-            rot: document.getElementById(`${mode}-rot`),
-            dist: document.getElementById(`${mode}-dist`),
+            speed:    document.getElementById(`${mode}-speed`),
+            tol:      document.getElementById(`${mode}-tol`),
+            dist:     document.getElementById(`${mode}-dist`),
             speedVal: document.getElementById(`${mode}-speed-val`),
-            rotVal: document.getElementById(`${mode}-rot-val`),
-            distVal: document.getElementById(`${mode}-dist-val`)
+            tolVal:   document.getElementById(`${mode}-tol-val`),
+            distVal:  document.getElementById(`${mode}-dist-val`)
         };
     });
 
     // 화면 폼 데이터를 특정 객체 값으로 매핑 및 갱신하는 함수
+    // settings 값은 m 단위 (goal_tolerance, obstacle_dist) -> 슬라이더는 cm 단위로 표시
     function applySettingsToForm(settings) {
         // 알고리즘 선택 라디오 활성화
         const targetRadio = document.getElementById(`algo-${settings.algorithm.toLowerCase()}`);
@@ -130,12 +130,13 @@
         }
 
         // 슬라이더 값들 동적 적용
+        // goal_tolerance, obstacle_dist: 서버값(m) * 100 → cm 슬라이더
         modes.forEach(mode => {
             const config = settings[mode];
             const el = elements[mode];
             el.speed.value = config.speed;
-            el.rot.value = config.rotation_speed;
-            el.dist.value = config.obstacle_dist;
+            el.tol.value   = Math.round(config.goal_tolerance * 100);  // m → cm
+            el.dist.value  = Math.round(config.obstacle_dist  * 100);  // m → cm
         });
 
         // 화면 텍스트(배지) 업데이트
@@ -147,8 +148,8 @@
         modes.forEach(mode => {
             const el = elements[mode];
             el.speedVal.innerText = parseFloat(el.speed.value).toFixed(2) + ' m/s';
-            el.rotVal.innerText = parseFloat(el.rot.value).toFixed(2) + ' rad/s';
-            el.distVal.innerText = Math.round(parseFloat(el.dist.value) * 100) + ' cm';
+            el.tolVal.innerText   = parseInt(el.tol.value)   + ' cm';  // 슬라이더 자체가 cm 단위
+            el.distVal.innerText  = parseInt(el.dist.value)  + ' cm';  // 슬라이더 자체가 cm 단위
         });
     }
 
@@ -209,9 +210,9 @@
             modes.forEach(mode => {
                 const el = elements[mode];
                 payload[mode] = {
-                    speed: parseFloat(el.speed.value),
-                    rotation_speed: parseFloat(el.rot.value),
-                    obstacle_dist: parseFloat(el.dist.value)
+                    speed:          parseFloat(el.speed.value),
+                    goal_tolerance: parseInt(el.tol.value)  / 100,  // cm → m
+                    obstacle_dist:  parseInt(el.dist.value) / 100   // cm → m
                 };
             });
 

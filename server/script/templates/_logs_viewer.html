@@ -1,5 +1,5 @@
 {% macro render_items(table_name, column_names, data, page, has_next, endpoint, count=0, per_page=15) %}
-<div class="content-card h-100 d-flex flex-column">
+<div class="content-card h-100 d-flex flex-column" id="logs-table-container">
     <h4 class="mb-3 text-primary border-bottom pb-2">{{ table_name }}</h4>
 
     <div class="table-responsive flex-grow-1">
@@ -55,11 +55,19 @@
         <ul class="pagination justify-content-center mb-0">
             <!-- 처음 -->
             <li class="page-item {% if page == 1 %}disabled{% endif %}">
-                <a class="page-link" href="{{ url_for(endpoint, page=1, region=current_region, **kwargs) }}">처음</a>
+                <a class="page-link" href="javascript:void(0);"
+                   hx-get="{{ url_for(endpoint, page=1, region=current_region, **kwargs) }}"
+                   hx-target="#logs-table-container"
+                   hx-swap="outerHTML"
+                   hx-push-url="true">처음</a>
             </li>
             <!-- 이전 -->
             <li class="page-item {% if page == 1 %}disabled{% endif %}">
-                <a class="page-link" href="{{ url_for(endpoint, page=page-1, region=current_region, **kwargs) }}">이전</a>
+                <a class="page-link" href="javascript:void(0);"
+                   hx-get="{{ url_for(endpoint, page=page-1, region=current_region, **kwargs) }}"
+                   hx-target="#logs-table-container"
+                   hx-swap="outerHTML"
+                   hx-push-url="true">이전</a>
             </li>
             
             <!-- 페이지 번호 -->
@@ -68,18 +76,30 @@
                 {% if page == p %}
                 <span class="page-link">{{ p }}</span>
                 {% else %}
-                <a class="page-link" href="{{ url_for(endpoint, page=p, region=current_region, **kwargs) }}">{{ p }}</a>
+                <a class="page-link" href="javascript:void(0);"
+                   hx-get="{{ url_for(endpoint, page=p, region=current_region, **kwargs) }}"
+                   hx-target="#logs-table-container"
+                   hx-swap="outerHTML"
+                   hx-push-url="true">{{ p }}</a>
                 {% endif %}
             </li>
             {% endfor %}
 
             <!-- 다음 -->
             <li class="page-item {% if page == total_pages or not has_next %}disabled{% endif %}">
-                <a class="page-link" href="{{ url_for(endpoint, page=page+1, region=current_region, **kwargs) }}">다음</a>
+                <a class="page-link" href="javascript:void(0);"
+                   hx-get="{{ url_for(endpoint, page=page+1, region=current_region, **kwargs) }}"
+                   hx-target="#logs-table-container"
+                   hx-swap="outerHTML"
+                   hx-push-url="true">다음</a>
             </li>
             <!-- 끝 -->
             <li class="page-item {% if page == total_pages %}disabled{% endif %}">
-                <a class="page-link" href="{{ url_for(endpoint, page=total_pages, region=current_region, **kwargs) }}">끝</a>
+                <a class="page-link" href="javascript:void(0);"
+                   hx-get="{{ url_for(endpoint, page=total_pages, region=current_region, **kwargs) }}"
+                   hx-target="#logs-table-container"
+                   hx-swap="outerHTML"
+                   hx-push-url="true">끝</a>
             </li>
         </ul>
     </nav>

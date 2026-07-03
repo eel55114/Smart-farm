@@ -12,11 +12,9 @@
 </div>
 {% endif %}
 <div class="row">
-    <!-- 좌측(센서 현재값 + 센서 그래프) -->
+    <!-- 좌측 (센서 상태) -->
     <div class="col-md-6 mb-4">
-        
-        <!-- 좌상단(센서 현재값) -->
-        <div class="content-card mb-4">
+        <div class="content-card h-100">
             <h4 class="mb-3 text-primary border-bottom pb-2">센서 상태</h4>
             <div class="scrollable-container overflow-y-auto overflow-x-hidden pe-2" style="max-height: 400px;">
                 <div id="sensor-container"
@@ -27,19 +25,13 @@
                 </div>
             </div>
         </div>
-
-        <!-- 좌하단(센서 그래프) -->
-        <div class="content-card">
-            {{ chart_viewer.render_charts('센서 그래프', request.endpoint, days, page, charts_data) }}
-        </div>
-
-
     </div>
-    <!-- 우측(센서 이력) -->
-    <div class="col-md-6 mb-4">
 
-        {% set table_name = '센서 이력' %}
-        {{ logs_viewer.render_items(table_name, history_columns, history_data, page, has_next, endpoint=request.endpoint, count=count, per_page=per_page) }}
+    <!-- 우측 (센서 그래프) -->
+    <div class="col-md-6 mb-4">
+        <div class="content-card h-100">
+            {{ chart_viewer.render_charts('센서 그래프', request.endpoint, days, 1, charts_data) }}
+        </div>
     </div>
 </div>
 {% endblock %}

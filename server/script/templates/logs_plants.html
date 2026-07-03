@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% import "_logs_viewer.html" as logs_viewer %}
+{% import "_filter_components.html" as filters %}
+{% block title %}작물 로그 조회{% endblock %}
+
+{% block content %}
+<h1 class="display-5 mb-4 border-bottom pb-3">작물 로그 조회</h1>
+{% if db_error %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <strong>오류:</strong> 데이터베이스에 접속할 수 없습니다. 잠시 후에 다시 시도해 주세요.
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+<div class="row">
+    <!-- 좌측 검색 옵션 (5) -->
+    <div class="col-md-5 mb-4">
+        <div class="content-card h-100">
+            <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-2">
+                <h4 class="mb-0 text-primary">검색 옵션</h4>
+                <a href="{{ request.path }}" class="btn btn-outline-secondary btn-sm fw-bold d-flex align-items-center gap-1">
+                    <span class="material-symbols-outlined fs-6">restart_alt</span>
+                    검색 조건 초기화
+                </a>
+            </div>
+            
+            <form method="GET" action="{{ url_for('logs.logs_plants') }}">
+                <!-- 지역 필터 -->
+                {{ filters.render_checkbox_group('지역', 'regions', all_regions, selected_regions, 'region') }}
+
+                <!-- 작물 유형 필터 -->
+                {{ filters.render_checkbox_group('작물 유형', 'types', all_plant_types, selected_types, 'type') }}
+
+                <!-- 일시 필터 -->
+                {{ filters.render_date_range(start_date, end_date) }}
+
+                <!-- 조회 버튼 -->
+                <div class="mt-4 pt-2">
+                    <button type="submit" class="btn btn-primary w-100 fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2 py-2">
+                        <span class="material-symbols-outlined fs-5">search</span>
+                        조회
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 우측 로그 화면 (7) -->
+    <div class="col-md-7 mb-4">
+        {% set table_name = '작물 로그 이력' %}
+        {{ logs_viewer.render_items(table_name, history_columns, history_data, page, has_next, endpoint='logs.logs_plants', count=count, per_page=per_page, regions=selected_regions, types=selected_types, start_date=start_date, end_date=end_date) }}
+    </div>
+</div>
+{{ filters.render_filter_js() }}
+{% endblock %}

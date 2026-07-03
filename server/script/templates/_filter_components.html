@@ -1,0 +1,85 @@
+{# 1. 다중 선택 버튼(체크박스 숨김) 그룹 렌더링 매크로 #}
+{% macro render_checkbox_group(title, name, items, selected_items, id_prefix) %}
+<div class="mb-4">
+    <h6 class="fw-bold text-secondary mb-2">{{ title }}</h6>
+    <div class="d-flex flex-wrap gap-2">
+        {% for item in items %}
+        <input type="checkbox" class="btn-check" name="{{ name }}" value="{{ item.id }}" id="{{ id_prefix }}-{{ item.id }}" {% if item.id in selected_items %}checked{% endif %}
+               {% if item.region_id is defined and item.region_id is not none %}data-region-id="{{ item.region_id }}"{% endif %}
+               {% if item.type_id is defined and item.type_id is not none %}data-type-id="{{ item.type_id }}"{% endif %}>
+        <label class="btn btn-outline-primary btn-sm fw-semibold" for="{{ id_prefix }}-{{ item.id }}"
+               {% if item.region_id is defined and item.region_id is not none %}data-region-id="{{ item.region_id }}"{% endif %}
+               {% if item.type_id is defined and item.type_id is not none %}data-type-id="{{ item.type_id }}"{% endif %}>{{ item.name }}</label>
+        {% endfor %}
+    </div>
+</div>
+{% endmacro %}
+
+{# 2. 시작일~종료일 날짜 선택기 매크로 #}
+{% macro render_date_range(start_date, end_date) %}
+<div class="mb-4">
+    <h6 class="fw-bold text-secondary mb-2">일시</h6>
+    <div class="d-flex align-items-center gap-2">
+        <input type="date" class="form-control" name="start_date" value="{{ start_date }}">
+        <span class="text-muted">~</span>
+        <input type="date" class="form-control" name="end_date" value="{{ end_date }}">
+    </div>
+</div>
+{% endmacro %}
+
+{# 3. 필터간 상하 관계 숨김 스크립트 매크로 #}
+{% macro render_filter_js() %}
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const regionChecks = document.querySelectorAll('input[name="regions"]');
+    const typeChecks = document.querySelectorAll('input[name="types"]');
+    
+    function updateFiltersVisibility() {
+        const selectedRegions = Array.from(regionChecks)
+            .filter(cb => cb.checked)
+            .map(cb => cb.value);
+            
+        const selectedTypes = Array.from(typeChecks)
+            .filter(cb => cb.checked)
+            .map(cb => cb.value);
+
+        const targetInputs = document.querySelectorAll('input[data-region-id], input[data-type-id]');
+        
+        targetInputs.forEach(input => {
+            const label = document.querySelector(`label[for="${input.id}"]`);
+            const itemRegion = input.getAttribute('data-region-id');
+            const itemType = input.getAttribute('data-type-id');
+            
+            let showByRegion = true;
+            let showByType = true;
+            
+            if (selectedRegions.length > 0 && itemRegion) {
+                showByRegion = selectedRegions.includes(itemRegion);
+            }
+            
+            if (selectedTypes.length > 0 && itemType) {
+                showByType = selectedTypes.includes(itemType);
+            }
+            
+            const shouldShow = showByRegion && showByType;
+            
+            if (shouldShow) {
+                input.style.display = '';
+                if (label) label.style.display = '';
+            } else {
+                input.style.display = 'none';
+                if (label) label.style.display = 'none';
+                if (input.checked) {
+                    input.checked = false;
+                }
+            }
+        });
+    }
+
+    regionChecks.forEach(cb => cb.addEventListener('change', updateFiltersVisibility));
+    typeChecks.forEach(cb => cb.addEventListener('change', updateFiltersVisibility));
+
+    updateFiltersVisibility();
+});
+</script>
+{% endmacro %}
