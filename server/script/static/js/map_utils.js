@@ -10,7 +10,7 @@
  * @param {Array<number>} array - -1~100 범위의 격자 확률 배열
  * @returns {string} Base64 이미지 Data URL
  */
-function drawOccupancyGrid(width, height, array) {
+function drawOccupancyGrid(width, height, array, mode = 'trinary') {
     const offCanvas = document.createElement('canvas');
     offCanvas.width = width;
     offCanvas.height = height;
@@ -26,7 +26,11 @@ function drawOccupancyGrid(width, height, array) {
             
             let r = 0, g = 0, b = 0, a = 0;
             if (val === -1) {
-                r = 0; g = 0; b = 0; a = 0; // 미탐색 영역 투명화
+                if (mode === 'trinary') {
+                    r = 217; g = 217; b = 217; a = 255; // 밝기 85% 정도의 회색 (255 * 0.85 ≈ 217)
+                } else {
+                    r = 0; g = 0; b = 0; a = 0; // 타 모드에서는 미탐색 영역 투명화
+                }
             } else if (val === 0) {
                 r = 250; g = 250; b = 250; a = 255; // 빈 공간
             } else if (val === 100) {

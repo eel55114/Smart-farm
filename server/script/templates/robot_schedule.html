@@ -2,8 +2,441 @@
 {% block title %}로봇 일정 계획{% endblock %}
 
 {% block content %}
+<style>
+    /* ── 전체 레이아웃 ─────────────────────────────────────────── */
+    .schedule-page {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 7rem);
+        min-height: 480px;
+    }
+
+    /* ── 폰트 크기 일관성 보정 ──────────────────────────────────── */
+    .small, small, .text-muted.small {
+        font-size: 0.875rem !important;
+    }
+    .form-label.small {
+        font-size: 0.875rem !important;
+    }
+    .form-check-label.small {
+        font-size: 0.875rem !important;
+    }
+
+    /* ── 편집 모드 윤곽선 ───────────────────────────────────────── */
+    .map-editor.edit-mode .map-canvas-pane {
+        outline: 2px solid #0d6efd;
+        outline-offset: -2px;
+    }
+
+    /* ── 스케일바 ──────────────────────────────────────────────── */
+    #map-scale-bar {
+        position: absolute;
+        bottom: 12px; right: 12px;
+        background: rgba(255,255,255,0.55);
+        pointer-events: none; z-index: 5;
+        font-size: 0.875rem; color: #333;
+        min-width: 70px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+        border-radius: 0.25rem;
+        padding: 0.2rem 0.45rem;
+    }
+    #scale-label { text-align: center; font-weight: 700; margin-bottom: 2px; }
+    #scale-line {
+        border: 2px solid #333; border-top: none;
+        height: 5px; width: 50px; margin: 0 auto;
+    }
+
+    /* ── 노드 카드 ─────────────────────────────────────────────── */
+    .node-card {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.28rem 0.4rem;
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+        margin-bottom: 0.28rem;
+        background: #fff;
+        cursor: pointer;
+        font-size: 0.875rem;
+        transition: background 0.1s;
+        user-select: none;
+    }
+    .node-card:hover { background: #f0f4ff; border-color: #adc6ff; }
+    .node-card--edit {
+        flex-direction: column;
+        align-items: stretch;
+        cursor: default;
+        background: #f8f9ff;
+        border-color: #0d6efd;
+        padding: 0.55rem 0.6rem;
+    }
+    .node-card--edit:hover { background: #f8f9ff; }
+    .node-card--over { border-top: 2.5px solid #0d6efd; }
+    .node-card--dragging { opacity: 0.38; }
+
+    .node-drag-handle {
+        cursor: grab;
+        color: #adb5bd;
+        font-size: 1.05rem;
+        line-height: 1;
+        flex-shrink: 0;
+    }
+    .node-drag-handle:active { cursor: grabbing; }
+    .node-id-badge   { font-size: 0.875rem; flex-shrink: 0; }
+    .node-type-badge { font-size: 0.875rem; flex-shrink: 0; }
+    .node-coords {
+        flex: 1; min-width: 0;
+        overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+        color: #495057; letter-spacing: -0.01em;
+    }
+    .node-coords b { margin-left: 0.12rem; color: #212529; }
+    .btn-node-del {
+        background: none; border: none; padding: 0 0.1rem;
+        color: #adb5bd; font-size: 0.875rem; line-height: 1;
+        cursor: pointer; flex-shrink: 0;
+        transition: color 0.1s;
+    }
+    .btn-node-del:hover { color: #dc3545; }
+    .node-edit-label {
+        display: block;
+        font-size: 0.875rem; color: #6c757d; margin-bottom: 2px;
+    }
+</style>
+
 <div class="d-flex align-items-center gap-3 mb-4 border-bottom pb-3">
     {% include '_robot_selector.html' %}
     <h1 class="display-5 mb-0">일정 계획</h1>
 </div>
+
+<div class="schedule-page">
+
+    <!-- 지도 선택자 -->
+    <div class="d-flex align-items-center gap-2 px-3 py-2 bg-light border border-bottom-0 rounded-top flex-shrink-0">
+        <label for="map-select" class="form-label mb-0 fw-semibold text-secondary text-nowrap" style="font-size: 0.875rem;">지도 선택</label>
+        <select id="map-select" class="form-select form-select-sm" onchange="onMapSelectChange(this.value)">
+            <option value="">-- 지도를 선택하세요 --</option>
+            {% for name in map_names %}
+            <option value="{{ name }}"
+                {% if current_robot_data and current_robot_data.map == name %}selected{% endif %}>
+                {{ name }}
+            </option>
+            {% endfor %}
+        </select>
+        <span class="text-muted small text-nowrap">(총 {{ map_names | length }}개)</span>
+    </div>
+
+    <!-- 메뉴바 -->
+    <div class="d-flex align-items-center gap-1 px-3 py-2 bg-white border border-bottom-0 flex-shrink-0">
+        <button id="btn-set-current-map" class="btn btn-primary btn-sm fw-bold px-3 py-2 shadow-sm border-0"
+                onclick="setCurrentMap()" disabled>
+            <span id="btn-set-map-label">현재 지도로 설정</span>
+        </button>
+        <div class="vr mx-1"></div>
+        <button id="btn-edit-map" class="btn btn-secondary btn-sm fw-bold px-3 py-2 shadow-sm border-0"
+                onclick="toggleEditMode()">편집</button>
+        <button id="btn-clone-map" class="btn btn-secondary btn-sm fw-bold px-3 py-2 shadow-sm border-0" onclick="cloneMap()" disabled>복제</button>
+        <button id="btn-rename-map" class="btn btn-secondary btn-sm fw-bold px-3 py-2 shadow-sm border-0" onclick="renameMap()" disabled>이름 변경</button>
+        <div class="ms-auto"></div>
+        <button id="btn-delete-map" class="btn btn-outline-danger btn-sm fw-bold px-3 py-2 border-0" onclick="deleteMap()" disabled>삭제</button>
+    </div>
+
+    <!-- 편집기 -->
+    <div class="d-flex flex-grow-1 border rounded-bottom overflow-hidden map-editor" id="map-editor">
+
+        <!-- 지도 캔버스 (좌 2/3) -->
+        <div class="bg-dark position-relative overflow-hidden border-end map-canvas-pane" id="map-canvas-pane" style="flex: 2;">
+            <span class="position-absolute bg-primary text-white fw-bold px-3 py-1 rounded-pill edit-mode-badge" style="top: 10px; left: 10px; z-index: 10; display: none; font-size: 0.875rem;">편집 모드</span>
+            <canvas id="map-canvas"></canvas>
+            <div class="position-absolute top-0 start-0 w-100 h-100 align-items-center justify-content-center text-secondary pe-none map-placeholder" id="map-placeholder" style="z-index: 1; font-size: 0.875rem; display: flex;">
+                <p class="mb-0">지도를 선택하면 여기에 표시됩니다.</p>
+            </div>
+            <div id="map-scale-bar" class="d-none">
+                <div id="scale-label">1m</div>
+                <div id="scale-line"></div>
+            </div>
+        </div>
+
+        <!-- 조작 창 (우 1/3) -->
+        <div class="bg-white d-flex flex-column overflow-hidden map-control-pane" style="flex: 1; min-height: 0;">
+
+            <!-- ── 계획 조회 창 ── -->
+            <div id="pane-plan" style="display:flex; flex-direction:column; flex:1; overflow:hidden; min-height:0;">
+
+                <div class="px-3 py-2 fw-bold text-secondary text-uppercase border-bottom bg-light flex-shrink-0 pane-header" style="font-size: 0.875rem; letter-spacing: 0.05em;">계획 조회</div>
+
+                <!-- 계획 선택자 (고정 상단) -->
+                <div id="plan-selector" class="d-flex align-items-center gap-1 px-3 py-2 border-bottom bg-white flex-shrink-0">
+                    <select id="plan-dropdown" class="form-select form-select-sm"></select>
+                    <button id="btn-add-plan"
+                            class="btn btn-secondary btn-sm fw-bold px-2 py-1 shadow-sm border-0"
+                            style="white-space:nowrap;" disabled>추가</button>
+                    <button id="btn-delete-plan"
+                            class="btn btn-outline-danger btn-sm fw-bold px-2 py-1"
+                            style="white-space:nowrap;" disabled>삭제</button>
+                </div>
+
+                <!-- 노드 선택자 (스크롤) -->
+                <div id="node-selector" class="flex-grow-1 overflow-auto p-2" style="min-height: 0;">
+                    <input id="plan-name-input" type="text" class="form-control form-control-sm mb-2"
+                           placeholder="계획 이름" disabled>
+                    <div id="node-list-container"></div>
+                    <button id="btn-add-node"
+                            class="btn btn-outline-secondary btn-sm w-100 mt-1"
+                            style="display:none; font-size:0.875rem;">+ 추가</button>
+                </div>
+
+                <!-- 저장 메뉴 (고정 하단) -->
+                <div id="save-menu" class="gap-2 p-2 border-top bg-light flex-shrink-0" style="display: none;">
+                    <button id="btn-cancel-plan"
+                            class="btn btn-outline-secondary btn-sm fw-bold flex-fill">취소</button>
+                    <button id="btn-save-plan"
+                            class="btn btn-primary btn-sm fw-bold flex-fill border-0 shadow-sm">저장</button>
+                </div>
+
+            </div>
+
+            <!-- ── 지도 편집 창 ── -->
+            <div id="pane-edit" style="display:none; flex-direction:column; flex:1; overflow:hidden; min-height:0;">
+                <div class="px-3 py-2 fw-bold text-secondary text-uppercase border-bottom bg-light flex-shrink-0 pane-header" style="font-size: 0.875rem; letter-spacing: 0.05em;">지도 편집</div>
+                <div class="p-3 d-flex flex-column gap-4 overflow-auto" style="flex:1; min-height:0;">
+                    
+                    <!-- 1. 실행 관리 -->
+                    <div>
+                        <label class="form-label fw-bold text-secondary small mb-2">실행 관리</label>
+                        <div class="d-flex gap-2">
+                            <button id="btn-edit-undo" class="btn btn-outline-secondary btn-sm flex-fill fw-bold" disabled>실행 취소</button>
+                            <button id="btn-edit-redo" class="btn btn-outline-secondary btn-sm flex-fill fw-bold" disabled>다시 실행</button>
+                        </div>
+                    </div>
+
+                    <!-- 2. 색상 선택 -->
+                    <div>
+                        <label class="form-label fw-bold text-secondary small mb-2">색상 선택</label>
+                        <div class="btn-group d-flex w-100 shadow-sm" role="group" aria-label="Color Select">
+                            <input type="radio" class="btn-check" name="editColor" id="btn-color-black" autocomplete="off" checked>
+                            <label class="btn btn-outline-primary btn-sm fw-bold flex-fill" for="btn-color-black">검은색</label>
+
+                            <input type="radio" class="btn-check" name="editColor" id="btn-color-white" autocomplete="off">
+                            <label class="btn btn-outline-primary btn-sm fw-bold flex-fill" for="btn-color-white">흰색</label>
+                        </div>
+                    </div>
+
+                    <!-- 3. 굵기 조정 -->
+                    <div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <label class="form-label fw-bold text-secondary small mb-0">굵기 조정</label>
+                            <span id="brush-size-val" class="badge bg-secondary">1 px</span>
+                        </div>
+                        <input id="slider-brush-size" type="range" class="form-range" min="1" max="4" step="1" value="1">
+                    </div>
+
+                    <!-- 4. 모양 선택 -->
+                    <div>
+                        <label class="form-label fw-bold text-secondary small mb-2">모양 선택</label>
+                        <div class="btn-group d-flex w-100 shadow-sm" role="group" aria-label="Shape Select">
+                            <input type="radio" class="btn-check" name="editShape" id="btn-shape-pencil" autocomplete="off" checked>
+                            <label class="btn btn-outline-primary btn-sm fw-bold flex-fill d-flex align-items-center justify-content-center gap-1" for="btn-shape-pencil">
+                                <span class="material-symbols-outlined" style="font-size: 1.1rem;">edit</span>연필
+                            </label>
+
+                            <input type="radio" class="btn-check" name="editShape" id="btn-shape-line" autocomplete="off">
+                            <label class="btn btn-outline-primary btn-sm fw-bold flex-fill d-flex align-items-center justify-content-center gap-1" for="btn-shape-line">
+                                <span class="material-symbols-outlined" style="font-size: 1.1rem;">horizontal_rule</span>선
+                            </label>
+
+                            <input type="radio" class="btn-check" name="editShape" id="btn-shape-rect" autocomplete="off">
+                            <label class="btn btn-outline-primary btn-sm fw-bold flex-fill d-flex align-items-center justify-content-center gap-1" for="btn-shape-rect">
+                                <span class="material-symbols-outlined" style="font-size: 1.1rem;">crop_square</span>사각형
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 5. 그리기 옵션 -->
+                    <div>
+                        <label class="form-label fw-bold text-secondary small mb-2">그리기 옵션</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="check-fill-inner">
+                            <label class="form-check-label small fw-semibold text-dark" for="check-fill-inner">내부 채움</label>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- 6. [최하단 고정] 저장 메뉴 -->
+                <div class="gap-2 p-2 border-top bg-light flex-shrink-0 d-flex">
+                    <button id="btn-edit-cancel" class="btn btn-outline-secondary btn-sm fw-bold flex-fill">취소</button>
+                    <button id="btn-edit-save" class="btn btn-primary btn-sm fw-bold flex-fill border-0 shadow-sm" disabled>저장</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- 확인 모달 -->
+<div class="modal fade" id="confirm-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title" id="confirm-modal-title">확인</h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body small" id="confirm-modal-body"></div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm"
+                        data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-danger btn-sm"
+                        id="confirm-modal-ok">삭제</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 이름 변경 모달 -->
+<div class="modal fade" id="rename-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title">지도 이름 변경</h6>
+                <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="rename-input" class="form-label fw-bold text-secondary small mb-2">새 이름 입력</label>
+                    <input type="text" class="form-control form-control-sm" id="rename-input" placeholder="새 지도 이름을 입력하세요">
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">취소</button>
+                <button type="button" class="btn btn-primary btn-sm" id="rename-modal-ok">변경</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 지도 유틸리티 & 페이지 스크립트 -->
+<script src="{{ url_for('static', filename='js/map_utils.js') }}"></script>
+<script src="{{ url_for('static', filename='js/robot_schedule.js') }}"></script>
+
+<script>
+    // HTML 전역 레벨 변수 및 동기화 처리
+    const ROBOT_ID = {{ current_robot | safe if current_robot else 'null' }};
+    let currentRobotMap = {% if current_robot_data and current_robot_data.map %}"{{ current_robot_data.map | safe }}"{% else %}null{% endif %};
+    let selectedMap = document.getElementById('map-select').value || null;
+    let isEditMode  = false;
+
+    const btnSetMap   = document.getElementById('btn-set-current-map');
+    const btnSetLabel = document.getElementById('btn-set-map-label');
+    const btnEdit     = document.getElementById('btn-edit-map');
+    const btnClone    = document.getElementById('btn-clone-map');
+    const btnRename   = document.getElementById('btn-rename-map');
+    const btnDelete   = document.getElementById('btn-delete-map');
+    const editorEl    = document.getElementById('map-editor');
+    const panePlan    = document.getElementById('pane-plan');
+    const paneEdit    = document.getElementById('pane-edit');
+
+    syncSetMapBtn();
+
+    /* 드롭다운 변경 */
+    window.onMapSelectChange = function(value) {
+        selectedMap = value || null;
+        if (isEditMode) exitEditMode();
+        syncSetMapBtn();
+        if (typeof window.scheduleLoadMap === 'function') {
+            window.scheduleLoadMap(selectedMap || '');
+        }
+    };
+
+    function syncSetMapBtn() {
+        const hasSelected = !!selectedMap;
+        if (btnEdit) btnEdit.disabled = !hasSelected;
+        if (btnClone) btnClone.disabled = !hasSelected;
+        if (btnRename) btnRename.disabled = !hasSelected;
+        if (btnDelete) btnDelete.disabled = !hasSelected;
+
+        if (!hasSelected) {
+            btnSetMap.disabled = true;
+            btnSetLabel.textContent = '현재 지도로 설정';
+            btnSetMap.classList.remove('btn-success');
+            btnSetMap.classList.add('btn-primary');
+            return;
+        }
+        const isCurrent = currentRobotMap !== null && currentRobotMap === selectedMap;
+        btnSetMap.disabled = isCurrent;
+        btnSetLabel.textContent = isCurrent ? '현재 지도' : '현재 지도로 설정';
+        if (isCurrent) {
+            btnSetMap.classList.remove('btn-primary');
+            btnSetMap.classList.add('btn-success');
+        } else {
+            btnSetMap.classList.remove('btn-success');
+            btnSetMap.classList.add('btn-primary');
+        }
+    }
+
+    window.setCurrentMap = async function() {
+        if (!ROBOT_ID || !selectedMap) return;
+        btnSetMap.disabled = true;
+        try {
+            const res  = await fetch('/api/robot_set_map', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ robot: ROBOT_ID, map_name: selectedMap })
+            });
+            const data = await res.json();
+            if (res.ok) currentRobotMap = data.map;
+            else console.error('[Set Map]', data.error);
+        } catch (e) { console.error('[Set Map]', e); }
+        syncSetMapBtn();
+    };
+
+    window.toggleEditMode = function() {
+        if (!isEditMode) {
+            window.enterEditMode();
+        }
+    };
+    window.enterEditMode = function() {
+        selectedMap = document.getElementById('map-select').value || null;
+        if (!selectedMap) {
+            alert('지도를 먼저 선택해 주세요.');
+            return;
+        }
+        isEditMode = true;
+        editorEl.classList.add('edit-mode');
+        btnEdit.classList.remove('btn-secondary');
+        btnEdit.classList.add('btn-primary');
+        btnEdit.disabled = true; // 편집중일 때는 버튼 비활성화
+        panePlan.style.display = 'none';
+        paneEdit.style.display = 'flex';
+        if (typeof window.onMapEditModeStart === 'function') {
+            window.onMapEditModeStart();
+        }
+    };
+    window.exitEditMode = function() {
+        isEditMode = false;
+        editorEl.classList.remove('edit-mode');
+        btnEdit.classList.remove('btn-primary');
+        btnEdit.classList.add('btn-secondary');
+        btnEdit.disabled = false; // 종료 시 다시 활성화
+        panePlan.style.display = 'flex';
+        paneEdit.style.display = 'none';
+        if (typeof window.onMapEditModeEnd === 'function') {
+            window.onMapEditModeEnd();
+        }
+    };
+
+    document.addEventListener("DOMContentLoaded", () => {
+        const savedMap = sessionStorage.getItem('selectedMap');
+        if (savedMap) {
+            const select = document.getElementById('map-select');
+            if (select) {
+                const option = select.querySelector(`option[value="${savedMap}"]`);
+                if (option) {
+                    select.value = savedMap;
+                    window.onMapSelectChange(savedMap);
+                }
+            }
+            sessionStorage.removeItem('selectedMap');
+        }
+    });
+</script>
 {% endblock %}

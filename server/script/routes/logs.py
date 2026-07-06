@@ -1,4 +1,5 @@
 from datetime import datetime
+
 from db_instance import db
 from flask import Blueprint, render_template, request
 
@@ -6,20 +7,22 @@ logs_bp = Blueprint("logs", __name__)
 
 # --- 공통 헬퍼 함수 ---
 
+
 def parse_page_params(per_page=15):
     """요청으로부터 페이지네이션 변수를 파싱합니다."""
     page = request.args.get("page", 1, type=int)
     offset = (page - 1) * per_page
     return page, per_page, offset
 
+
 def parse_date_range():
     """요청으로부터 시작일과 종료일 문자열 및 datetime 객체를 파싱합니다."""
     start_date_str = request.args.get("start_date", "").strip()
     end_date_str = request.args.get("end_date", "").strip()
-    
+
     start_date = None
     end_date = None
-    
+
     if start_date_str:
         try:
             start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
@@ -27,11 +30,14 @@ def parse_date_range():
             pass
     if end_date_str:
         try:
-            end_date = datetime.strptime(end_date_str + " 23:59:59", "%Y-%m-%d %H:%M:%S")
+            end_date = datetime.strptime(
+                end_date_str + " 23:59:59", "%Y-%m-%d %H:%M:%S"
+            )
         except ValueError:
             pass
-            
+
     return start_date_str, end_date_str, start_date, end_date
+
 
 def render_log_page(
     template_name,
@@ -49,11 +55,11 @@ def render_log_page(
     selected_types=None,
     selected_sensors=None,
     selected_robots=None,
-    **extra_context
+    **extra_context,
 ):
     """htmx 요청 여부에 따라 부분 템플릿 또는 전체 템플릿을 분기 렌더링합니다."""
     is_hx = request.headers.get("HX-Request") == "true"
-    
+
     # 공통 컨텍스트 구성
     context = {
         "table_name": table_name,
@@ -69,18 +75,19 @@ def render_log_page(
         "selected_sensors": selected_sensors,
         "selected_robots": selected_robots,
         "start_date": start_date_str,
-        "end_date": end_date_str
+        "end_date": end_date_str,
     }
-    
+
     if is_hx:
         return render_template("_logs_viewer_partial.html", **context)
-        
+
     # 전체 페이지 렌더링 시에는 extra_context를 병합하여 전송
     context.update(extra_context)
     return render_template(template_name, **context)
 
 
 # --- 라우트 핸들러 ---
+
 
 @logs_bp.route("/logs/plants")
 def logs_plants():
@@ -105,7 +112,7 @@ def logs_plants():
         start_date=start_date,
         end_date=end_date,
         n=per_page,
-        offset=offset
+        offset=offset,
     )
     if err is not None:
         db_error = True
@@ -120,13 +127,19 @@ def logs_plants():
 
     history_data = []
     for h in history_records:
-        history_data.append([
-            h.created_at.strftime("%Y-%m-%d %H:%M:%S") if h.created_at else "-",
-            regions_map.get(h.region_id, f"ID {h.region_id}"),
-            types_map.get(h.type_id, f"ID {h.type_id}"),
-            f"{round(h.avg_maturity * 100, 1)}%" if h.avg_maturity is not None else "-",
-            f"{round(h.disease_ratio * 100, 1)}%" if h.disease_ratio is not None else "-"
-        ])
+        history_data.append(
+            [
+                h.created_at.strftime("%Y-%m-%d %H:%M:%S") if h.created_at else "-",
+                regions_map.get(h.region_id, f"ID {h.region_id}"),
+                types_map.get(h.type_id, f"ID {h.type_id}"),
+                f"{round(h.avg_maturity * 100, 1)}%"
+                if h.avg_maturity is not None
+                else "-",
+                f"{round(h.disease_ratio * 100, 1)}%"
+                if h.disease_ratio is not None
+                else "-",
+            ]
+        )
 
     history_columns = ["일시", "지역", "작물 유형", "평균 성숙도", "병해 발생 비율"]
 
@@ -146,8 +159,9 @@ def logs_plants():
         selected_types=selected_types,
         db_error=db_error,
         all_regions=all_regions,
-        all_plant_types=all_plant_types
+        all_plant_types=all_plant_types,
     )
+
 
 @logs_bp.route("/logs/sensors")
 def logs_sensors():
@@ -175,7 +189,7 @@ def logs_sensors():
         start_date=start_date,
         end_date=end_date,
         n=per_page,
-        offset=offset
+        offset=offset,
     )
     if err is not None:
         db_error = True
@@ -195,7 +209,11 @@ def logs_sensors():
         if sensor:
             region_name = regions_map.get(sensor.region_id, f"ID {sensor.region_id}")
             type_name = sensor_types_map.get(sensor.type_id, f"ID {sensor.type_id}")
-            sensor_name = f"[{sensor.id}] {sensor.name}" if (sensor.name and sensor.name.strip()) else f"[{sensor.id}] {type_name}"
+            sensor_name = (
+                f"[{sensor.id}] {sensor.name}"
+                if (sensor.name and sensor.name.strip())
+                else f"[{sensor.id}] {type_name}"
+            )
         else:
             region_name = "-"
             type_name = "-"
@@ -203,38 +221,54 @@ def logs_sensors():
 
         # 타입별 포맷 지정
         type_id = sensor.type_id if sensor else None
-        if type_id in [1, 2, 5]: # 습도, 조도, 토양습도
+        if type_id in [1, 2, 5]:  # 습도, 조도, 토양습도
             fmt = lambda v: f"{round(v * 100, 1)}%"
-        elif type_id == 3: # 온도
+        elif type_id == 3:  # 온도
             fmt = lambda v: f"{round(v, 1)}°C"
-        elif type_id == 4: # 화염
+        elif type_id == 4:  # 화염
             fmt = lambda v: "화재" if v > 0.5 else "없음"
         else:
             fmt = lambda v: str(round(v, 2))
 
-        history_data.append([
-            h.time_bucket.strftime("%Y-%m-%d %H:%M:%S") if h.time_bucket else "-",
-            region_name,
-            type_name,
-            sensor_name,
-            fmt(h.max),
-            fmt(h.avg),
-            fmt(h.min)
-        ])
+        history_data.append(
+            [
+                h.time_bucket.strftime("%Y-%m-%d %H:%M:%S") if h.time_bucket else "-",
+                region_name,
+                type_name,
+                sensor_name,
+                fmt(h.max),
+                fmt(h.avg),
+                fmt(h.min),
+            ]
+        )
 
-    history_columns = ["기준 시간", "지역", "센서 유형", "센서", "최댓값", "평균값", "최솟값"]
+    history_columns = [
+        "기준 시간",
+        "지역",
+        "센서 유형",
+        "센서",
+        "최댓값",
+        "평균값",
+        "최솟값",
+    ]
 
     # 템플릿에 전달할 센서 리스트 가공 (ID와 이름 결합 표시용)
     display_sensors = []
     for s in all_sensors:
         type_name = sensor_types_map.get(s.type_id, "알 수 없는 유형")
-        display_name = f"[{s.id}] {s.name}" if (s.name and s.name.strip()) else f"[{s.id}] {type_name}"
-        display_sensors.append({
-            "id": s.id,
-            "name": display_name,
-            "region_id": s.region_id,
-            "type_id": s.type_id
-        })
+        display_name = (
+            f"[{s.id}] {s.name}"
+            if (s.name and s.name.strip())
+            else f"[{s.id}] {type_name}"
+        )
+        display_sensors.append(
+            {
+                "id": s.id,
+                "name": display_name,
+                "region_id": s.region_id,
+                "type_id": s.type_id,
+            }
+        )
 
     return render_log_page(
         template_name="logs_sensors.html",
@@ -254,8 +288,9 @@ def logs_sensors():
         db_error=db_error,
         all_regions=all_regions,
         all_sensor_types=all_sensor_types,
-        display_sensors=display_sensors
+        display_sensors=display_sensors,
     )
+
 
 @logs_bp.route("/logs/robots")
 def logs_robots():
@@ -280,7 +315,7 @@ def logs_robots():
         start_date=start_date,
         end_date=end_date,
         n=per_page,
-        offset=offset
+        offset=offset,
     )
     if err is not None:
         db_error = True
@@ -303,23 +338,23 @@ def logs_robots():
             region_name = "-"
             robot_name = f"ID {h.robot_id}"
 
-        history_data.append([
-            h.created_at.strftime("%Y-%m-%d %H:%M:%S") if h.created_at else "-",
-            region_name,
-            robot_name,
-            h.state or "-"
-        ])
+        history_data.append(
+            [
+                h.created_at.strftime("%Y-%m-%d %H:%M:%S") if h.created_at else "-",
+                region_name,
+                robot_name,
+                h.state or "-",
+            ]
+        )
 
     history_columns = ["일시", "지역", "로봇", "상태"]
 
     # 템플릿에 전달할 로봇 리스트 가공 (ID와 이름 결합 표시용)
     display_robots = []
     for r in all_robots:
-        display_robots.append({
-            "id": r.id,
-            "name": f"[{r.id}] {r.name}",
-            "region_id": r.region_id
-        })
+        display_robots.append(
+            {"id": r.id, "name": f"[{r.id}] {r.name}", "region_id": r.region_id}
+        )
 
     return render_log_page(
         template_name="logs_robots.html",
@@ -337,5 +372,5 @@ def logs_robots():
         selected_robots=selected_robots,
         db_error=db_error,
         all_regions=all_regions,
-        display_robots=display_robots
+        display_robots=display_robots,
     )

@@ -76,6 +76,7 @@ def db():
                 name="bot_1",
                 state="-",
                 last_signal=datetime.now(),
+                map="greenhouse1-1",
             ),
             schema.Robot(
                 id=2,
@@ -83,6 +84,7 @@ def db():
                 name="bot_2",
                 state="-",
                 last_signal=datetime.now(),
+                map="greenhouse1-1",
             ),
             schema.Robot(
                 id=3,
@@ -90,6 +92,7 @@ def db():
                 name="bot_3",
                 state="-",
                 last_signal=datetime.now(),
+                map="greenhouse1-1",
             ),
         ]
 

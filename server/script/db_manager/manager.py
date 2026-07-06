@@ -104,6 +104,7 @@ class DBManager:
                     region_id=datum.region_id,
                     name=datum.name,
                     last_signal=datum.last_signal,
+                    map=datum.map,
                 )
 
                 result.append(temp)
@@ -415,6 +416,57 @@ class DBManager:
             session.commit()
             return None
 
+        except Exception as e:
+            session.rollback()
+            return e
+
+    def update_robot_map(self, robot_id: int, map_name: str | None) -> Exception | None:
+        """
+        `robot` 테이블의 `map` 필드를 갱신합니다.
+
+        Args:
+            robot_id (int): 업데이트할 로봇 ID
+            map_name (str | None): 설정할 지도 이름 (None이면 초기화)
+        Returns:
+            Exception | None: 발생한 에러
+        """
+        session = self.session_local()
+        try:
+            stmt = select(schema.Robot).where(schema.Robot.id == robot_id)
+            robot = session.scalars(stmt).first()
+            if robot is None:
+                return ValueError(f"There's no robot has ID '{robot_id}'")
+            robot.map = map_name
+            session.commit()
+            return None
+        except Exception as e:
+            session.rollback()
+            return e
+
+    def rename_robot_map(self, old_map_name: str, new_map_name: str) -> Exception | None:
+        """
+        `robot` 테이블에서 `old_map_name`을 사용하는 모든 로봇의 `map` 필드를 `new_map_name`으로 교체합니다.
+        """
+        session = self.session_local()
+        try:
+            stmt = update(schema.Robot).where(schema.Robot.map == old_map_name).values(map=new_map_name)
+            session.execute(stmt)
+            session.commit()
+            return None
+        except Exception as e:
+            session.rollback()
+            return e
+
+    def clear_robot_map_on_delete(self, map_name: str) -> Exception | None:
+        """
+        `robot` 테이블에서 `map_name`을 사용하는 모든 로봇의 `map` 필드를 None으로 초기화합니다.
+        """
+        session = self.session_local()
+        try:
+            stmt = update(schema.Robot).where(schema.Robot.map == map_name).values(map=None)
+            session.execute(stmt)
+            session.commit()
+            return None
         except Exception as e:
             session.rollback()
             return e

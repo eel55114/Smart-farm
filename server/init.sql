@@ -111,6 +111,7 @@ CREATE TABLE robot(
     name VARCHAR(30) NOT NULL,      -- 로봇 이름
     state VARCHAR(50) NOT NULL,     -- 로봇 상태
     last_signal TIMESTAMP NOT NULL, -- 마지막 신호 연결
+    map VARCHAR(50) NULL,           -- 지도 튜플 이름
 
     FOREIGN KEY (region_id) REFERENCES region(id)
 );

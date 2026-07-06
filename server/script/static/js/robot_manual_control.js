@@ -116,8 +116,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 // 초기 위치 마커가 존재하면 제거
                 if (initialPoseMarker && canvas) {
-                    canvas.remove(initialPoseMarker.circle);
-                    canvas.remove(initialPoseMarker.line);
+                    canvas.remove(initialPoseMarker);
                     initialPoseMarker = null;
                     canvas.requestRenderAll();
                 }
@@ -223,9 +222,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // 맵 API 호출 및 드로잉
     const current_robot_map = () => {
-        fetch('/api/robot_current_map')
-            .then(res => res.json())
+        const errorOverlay = document.getElementById('map-error-overlay');
+        const errorMessage = document.getElementById('map-error-message');
+        const scaleBar = document.getElementById('map-scale-bar');
+
+        fetch(`/api/robot_current_map?robot=${currentRobotId}`)
+            .then(res => {
+                if (!res.ok) {
+                    return res.json().then(errData => {
+                        throw new Error(errData.error || "Failed to load map");
+                    });
+                }
+                return res.json();
+            })
             .then(data => {
+                // 정상 수신 시 오버레이 숨김
+                if (errorOverlay) errorOverlay.classList.add('d-none');
+
                 mapWidth = data.width;
                 mapHeight = data.height;
                 mapResolution = data.resolution || 0.05;
@@ -237,7 +250,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     mapOriginY = -(mapHeight * mapResolution) / 2;
                 }
 
-                const dataUrl = drawOccupancyGrid(mapWidth, mapHeight, data.array);
+                const dataUrl = drawOccupancyGrid(mapWidth, mapHeight, data.array, data.mode);
 
                 if (currentMarker) {
                     canvas.remove(currentMarker);
@@ -266,7 +279,30 @@ document.addEventListener("DOMContentLoaded", () => {
                     }
                 });
             })
-            .catch(err => console.error('Error fetching map:', err));
+            .catch(err => {
+                console.error('Error fetching map:', err);
+
+                // 에러 메시지 갱신 및 노출
+                if (errorMessage) {
+                    errorMessage.innerText = err.message || "맵 정보가 없습니다. '일정 계획'에서 로봇 맵을 설정해 주세요.";
+                }
+                if (errorOverlay) {
+                    errorOverlay.classList.remove('d-none');
+                }
+                // 스케일바 숨김
+                if (scaleBar) {
+                    scaleBar.classList.add('d-none');
+                }
+                // 캔버스 객체 초기화 (배경 어둡게 유지)
+                if (canvas) {
+                    canvas.clear();
+                    canvas.setBackgroundColor('#212529', canvas.renderAll.bind(canvas));
+                }
+                if (currentMarker) currentMarker = null;
+                if (mapImageObject) mapImageObject = null;
+                const btnMove = document.getElementById('btn-moveto');
+                if (btnMove) btnMove.disabled = true;
+            });
     };
 
     // 뷰포트 재설정
@@ -385,45 +421,40 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // 초기 위치 지정 마커 그리기 헬퍼
     const drawInitialPoseMarker = (canvasX, canvasY, angleDeg) => {
-        if (initialPoseMarker) {
-            canvas.remove(initialPoseMarker.circle);
-            canvas.remove(initialPoseMarker.line);
-            initialPoseMarker = null;
-        }
-
         const zoom = canvas.getZoom();
-        const r = INITIAL_CIRCLE_RADIUS;
-        const L = INITIAL_LINE_LENGTH;
-        const angleRad = angleDeg * (Math.PI / 180);
+        const scaleFactor = (0.306 / mapResolution) / 114;
 
-        const circle = new fabric.Circle({
-            radius: r,
-            fill: 'rgba(220,0,0,0.25)',
-            stroke: 'red',
-            strokeWidth: 2,
-            left: canvasX,
-            top: canvasY,
-            originX: 'center',
-            originY: 'center',
-            selectable: false,
-            hoverCursor: 'crosshair',
-            scaleX: 1 / zoom,
-            scaleY: 1 / zoom
-        });
-
-        const endX = canvasX + (L / zoom) * Math.sin(angleRad);
-        const endY = canvasY - (L / zoom) * Math.cos(angleRad);
-
-        const line = new fabric.Line([canvasX, canvasY, endX, endY], {
-            stroke: 'red',
-            strokeWidth: 2.5 / zoom,
-            selectable: false,
-            hoverCursor: 'crosshair'
-        });
-
-        canvas.add(line);
-        canvas.add(circle);
-        initialPoseMarker = { circle, line, canvasX, canvasY, angleDeg };
+        if (!initialPoseMarker) {
+            const pathData = "M -17 8 C 7 -7 -7 -7 18 8 C 32 17 56 10 57 30 V 94 C 57 107 52 112 40 112 H -40 C -52 112 -57 107 -57 94 V 30 C -57 10 -32 17 -17 8 Z";
+            initialPoseMarker = new fabric.Path(pathData, {
+                fill: 'rgba(255, 0, 0, 0.25)',
+                stroke: 'red',
+                strokeWidth: 3 / zoom,
+                strokeUniform: true,
+                originX: 'center',
+                originY: 0.65,
+                selectable: false,
+                hoverCursor: 'crosshair',
+                scaleX: scaleFactor,
+                scaleY: scaleFactor,
+                left: canvasX,
+                top: canvasY,
+                angle: angleDeg
+            });
+            canvas.add(initialPoseMarker);
+        } else {
+            initialPoseMarker.set({
+                left: canvasX,
+                top: canvasY,
+                angle: angleDeg,
+                scaleX: scaleFactor,
+                scaleY: scaleFactor,
+                strokeWidth: 3 / zoom
+            });
+        }
+        initialPoseMarker.canvasX = canvasX;
+        initialPoseMarker.canvasY = canvasY;
+        initialPoseMarker.angleDeg = angleDeg;
         canvas.requestRenderAll();
     };
 
@@ -546,8 +577,7 @@ document.addEventListener("DOMContentLoaded", () => {
             this.classList.remove('btn-secondary');
             this.classList.add('btn-danger', 'active');
             if (initialPoseMarker) {
-                canvas.remove(initialPoseMarker.circle);
-                canvas.remove(initialPoseMarker.line);
+                canvas.remove(initialPoseMarker);
                 initialPoseMarker = null;
                 canvas.requestRenderAll();
             }

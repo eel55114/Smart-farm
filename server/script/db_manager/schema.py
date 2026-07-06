@@ -149,6 +149,7 @@ class Robot(Base):
     name: Mapped[str] = mapped_column("name", String(30))
     state: Mapped[str] = mapped_column("state", String(50))
     last_signal: Mapped[datetime] = mapped_column("last_signal")
+    map: Mapped[str | None] = mapped_column("map", String(50), nullable=True)
 
     region: Mapped["Region"] = relationship(back_populates="robots")
     histories: Mapped[List["RobotHistory"]] = relationship(back_populates="robot")
