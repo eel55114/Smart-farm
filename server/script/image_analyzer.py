@@ -94,9 +94,6 @@ class Connector:
                 print("이미지 디코딩 실패")
                 return
         except Exception as e:
-            print(f"이미지 변환 에러: {e}")
-            return
-        except Exception as e:
             print(f"Base64 디코딩 실패: {e}")
             return
         if not self.is_analyzing:
