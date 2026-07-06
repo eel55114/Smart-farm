@@ -87,6 +87,7 @@ class Robot:
     region_id: int = field(default=None)
     name: str = field(default=None)
     last_signal: datetime = field(default=None)
+    map: str = field(default=None)
 
 
 @dataclass

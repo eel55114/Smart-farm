@@ -1,7 +1,7 @@
 -- 1. 지역 설정
 insert into region(id, name) values
-(1, "비닐하우스 A"),
-(2, "비닐하우스 B");
+(1, "온실A"),
+(2, "온실B");
 
 -- 2. 작물 유형 설정
 insert into plant_type(id, name) values
@@ -10,8 +10,8 @@ insert into plant_type(id, name) values
 (3, "수박");
 
 -- 3. 개별 작물 배정 (작물번호 1~16)
--- 1지역(비닐하우스 A): 토마토 4개 (1~4번), 딸기 4개 (5~8번)
--- 2지역(비닐하우스 B): 토마토 4개 (9~12번), 수박 4개 (13~16번)
+-- 1지역(온실A): 토마토 4개 (1~4번), 딸기 4개 (5~8번)
+-- 2지역(온실B): 토마토 4개 (9~12번), 수박 4개 (13~16번)
 insert into plant(id, name, region_id, type_id, maturity, is_disease) values
 -- 1지역 토마토
 (1, "토마토 1", 1, 1, 0.64, 0),
@@ -91,7 +91,7 @@ insert into sensor_type(id, type_name) values
 (1, "조도"),
 (2, "습도"),
 (3, "온도"),
-(4, "화염");
+(4, "화염"),
 (5, "토양습도");
 
 -- 6. 개별 센서 최신값 설정
@@ -131,10 +131,10 @@ insert into actuator(id, type_id, region_id, state, last_signal) values
 (4, 2, 2, "정지", '2026-06-11 12:00:00');
 
 -- 10. 로봇 설정
-insert into robot(id, region_id, name, state, last_signal) values
-(1, 1, "로봇 A-1", "대기 중", '2026-06-11 12:00:00'),
-(2, 1, "로봇 A-2", "작업 중", '2026-06-11 12:00:00'),
-(3, 2, "로봇 B-1", "대기 중", '2026-06-11 12:00:00');
+insert into robot(id, region_id, name, state, last_signal, map) values
+(1, 1, "로봇 A-1", "대기 중", '2026-06-11 12:00:00', 'greenhouse1-1'),
+(2, 1, "로봇 A-2", "작업 중", '2026-06-11 12:00:00', 'greenhouse1-1'),
+(3, 2, "로봇 B-1", "대기 중", '2026-06-11 12:00:00', 'greenhouse1-1');
 
 -- 11. 로봇 상태 내역 초기화
 insert into robot_history(id, created_at, robot_id, state) values
