@@ -28,6 +28,11 @@
 
             <div class="border rounded bg-dark overflow-hidden position-relative flex-grow-1" style="height: 450px;">
                 <canvas id="map"></canvas>
+                <!-- 맵 없음 안내 메시지 오버레이 -->
+                <div id="map-error-overlay" class="position-absolute top-50 start-50 translate-middle text-white text-center d-none" style="z-index: 10; width: 80%;">
+                    <span class="material-symbols-outlined fs-1 text-warning mb-2">map</span>
+                    <p class="mb-0 fw-bold" id="map-error-message">맵 정보가 없습니다. '일정 계획'에서 로봇 맵을 설정해 주세요.</p>
+                </div>
                 <!-- 스케일바 오버레이 (50% 투명도 흰색 박스 및 클릭 관통 pointer-events: none) -->
                 <div id="map-scale-bar" class="position-absolute rounded p-2 d-none" style="bottom: 15px; right: 15px; background-color: rgba(255, 255, 255, 0.5); pointer-events: none; z-index: 5; font-family: sans-serif; font-size: 11px; color: #333; min-width: 80px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">
                     <div id="scale-label" style="text-align: center; font-weight: bold; margin-bottom: 2px;">1m</div>

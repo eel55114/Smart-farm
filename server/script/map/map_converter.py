@@ -47,20 +47,35 @@ def parse_pgm(pgm_file: bytes) -> dict[str, Any]:
     }
 
 
-def convert_scale_img(num: int) -> int:
+def convert_scale_img(num: int, negate: int = 0) -> int:
+    if negate:
+        occ = num / 255.0
+    else:
+        occ = (255.0 - num) / 255.0
+
     if num == 205:
         return -1
     else:
-        return round((254 - num) / 2.54)
+        return round(occ * 100.0)
 
 
-def convert_trinary_img(num: int) -> int:
-    if num == 254:
-        return 0
-    if num == 205:
-        return -1
+def convert_trinary_img(
+    num: int,
+    negate: int = 0,
+    occupied_thresh: float = 0.65,
+    free_thresh: float = 0.196,
+) -> int:
+    if negate:
+        occ = num / 255.0
     else:
+        occ = (255.0 - num) / 255.0
+
+    if occ > occupied_thresh:
         return 100
+    elif occ < free_thresh:
+        return 0
+    else:
+        return -1
 
 
 def tuple_to_msg(
@@ -69,10 +84,28 @@ def tuple_to_msg(
     map_image = parse_pgm(pgm_file)
     map_inform = yaml.safe_load(yaml_file)
 
-    if map_inform.get("mode") == "scale":
-        converted_data = [convert_scale_img(i) for i in map_image["data"]]
+    mode = map_inform.get("mode", "trinary")
+    negate = map_inform.get("negate", 0)
+    occupied_thresh = map_inform.get("occupied_thresh", 0.65)
+    free_thresh = map_inform.get("free_thresh", 0.196)
+
+    # YAML에 명시된 임계값이 있으면 덮어씀
+    if "free_thresh" in map_inform:
+        free_thresh = map_inform["free_thresh"]
+    if "occupied_thresh" in map_inform:
+        occupied_thresh = map_inform["occupied_thresh"]
+
+    if mode == "scale":
+        converted_data = [
+            convert_scale_img(i, negate) for i in map_image["data"]
+        ]
+    elif mode == "raw":
+        converted_data = list(map_image["data"])
     else:
-        converted_data = [convert_trinary_img(i) for i in map_image["data"]]
+        converted_data = [
+            convert_trinary_img(i, negate, occupied_thresh, free_thresh)
+            for i in map_image["data"]
+        ]
 
     height = map_image["height"]
     width = map_image["width"]
