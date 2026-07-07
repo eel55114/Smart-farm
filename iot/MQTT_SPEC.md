@@ -192,7 +192,7 @@ ROS 매핑: std_msgs/String
 
 ### 2-1-12. 웨이포인트 전송
 파이<-
-- 토픽명: `smartfarm/{region_id}/robot/command/{robot_id}/execute_waypoint_plan`
+- 토픽명: `smartfarm/{region_id}/robot/command/{robot_id}/waypoint`
 - 페이로드: json string {
     "sequence": (int list): sequence of waypoint IDs.
     "waypoint": json [{

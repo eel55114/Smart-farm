@@ -181,7 +181,7 @@ class Connector(Node):
             "initial_pose": self._on_initial_pose,
             "goal_pose": self._on_goal_pose,
             "publish_param": self._on_publish_param,
-            "execute_waypoint_plan": self._on_sequence,
+            "waypoint": self._on_sequence,
             "set_schedule": self._on_schedule,
         }.items():
             client.message_callback_add(cmd + suffix, cb)
@@ -191,12 +191,12 @@ class Connector(Node):
 
     def _on_schedule(self, client, userdata, msg) -> None:
         ros_msg = String()
-        ros_msg.data = msg
+        ros_msg.data = msg.payload
         self.schedule_pub.publish(ros_msg)
 
     def _on_sequence(self, client, userdata, msg) -> None:
         ros_msg = String()
-        ros_msg.data = msg
+        ros_msg.data = msg.payload
         self.schedule_pub.publish(ros_msg)
 
     def _on_set_map(self, client, userdata, msg) -> None:
