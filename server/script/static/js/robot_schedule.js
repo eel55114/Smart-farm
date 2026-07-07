@@ -1013,15 +1013,20 @@ function initPlanManager() {
     });
 
     // ── 계획 실행 처리 ────────────────────────────────────────────────────────
-    const execModal = new bootstrap.Modal(document.getElementById('execute-modal'));
+    let execModal = null;
 
     elBtnExecutePlan.addEventListener('click', () => {
         if (!editedPlan) return;
+        if (!execModal) {
+            execModal = new bootstrap.Modal(document.getElementById('execute-modal'));
+        }
         execModal.show();
     });
 
     document.getElementById('execute-modal-ok').addEventListener('click', () => {
-        execModal.hide();
+        if (execModal) {
+            execModal.hide();
+        }
         executeCurrentPlan();
     });
 

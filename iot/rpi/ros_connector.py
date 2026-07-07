@@ -15,6 +15,7 @@ from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from nav_msgs.msg import OccupancyGrid
 from paho.mqtt.enums import CallbackAPIVersion
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile
 from rosidl_runtime_py.set_message import set_message_fields
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String
@@ -58,11 +59,15 @@ class Connector(Node):
 
         self.mqtt = mqtt.Client(CallbackAPIVersion.VERSION2)
         self.mqtt.on_connect = self.on_connect
-
+        map_qos_profile = QoSProfile(
+            depth=1,
+            history=HistoryPolicy.KEEP_LAST,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,  # 👈 이 부분이 핵심입니다!
+        )
         # ROS Publishers
         self.robot_mode_pub = self.create_publisher(String, "/robot_mode", 10)
         self.remote_control_pub = self.create_publisher(String, "/remote_control", 10)
-        self.map_pub = self.create_publisher(OccupancyGrid, "/map", 10)
+        self.map_pub = self.create_publisher(OccupancyGrid, "/map", map_qos_profile)
         self.initial_pose_pub = self.create_publisher(
             PoseWithCovarianceStamped, "/initialpose", 10
         )
@@ -74,7 +79,9 @@ class Connector(Node):
         self._subs = [
             self.create_subscription(String, "/robot_state", self._on_robot_state, 1),
             self.create_subscription(String, "/robot_mode", self._on_robot_mode, 10),
-            self.create_subscription(String, "/battery", self._on_battery, 1),
+            self.create_subscription(
+                String, "/web_bridge/battery", self._on_battery, 1
+            ),
             self.create_subscription(String, "/robot_log", self._on_robot_log, 10),
             self.create_subscription(
                 CompressedImage, "/captured_image/compressed", self._on_plant_img, 1

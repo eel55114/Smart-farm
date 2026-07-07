@@ -332,6 +332,7 @@ def robot_set_map():
 
         connector = current_app.config.get("MQTT_CONNECTOR")
         if connector:
+            # 1. set_map 발송
             topic = f"smartfarm/{region_id}/robot/command/{robot_id}/set_map"
             payload = {
                 "name": map_name,
@@ -340,6 +341,19 @@ def robot_set_map():
             }
             connector.publish(topic, payload)
             print(f"[Set Map] Robot {robot_id}: '{map_name}' → MQTT {topic}")
+
+            # 2. set_schedule 발송
+            plan_path = map_dir / f"{map_name}_plan.json"
+            plans = []
+            if plan_path.exists():
+                try:
+                    plans = json.loads(plan_path.read_text(encoding="utf-8"))
+                except Exception as pe:
+                    print(f"[Set Map] Failed to load plan file {plan_path}: {pe}")
+            
+            schedule_topic = f"smartfarm/{region_id}/robot/command/{robot_id}/set_schedule"
+            connector.publish(schedule_topic, plans)
+            print(f"[Set Map] Robot {robot_id} schedule sent → MQTT {schedule_topic}")
         else:
             print(f"[Set Map] Robot {robot_id}: '{map_name}' → MQTT connector 없음, DB만 갱신됨")
     except Exception as e:
@@ -553,6 +567,20 @@ def save_plans(map_name: str):
         plan_path.write_text(
             json.dumps(plans, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+
+        # 해당 맵을 사용하는 모든 로봇에 set_schedule MQTT 전송
+        connector = current_app.config.get("MQTT_CONNECTOR")
+        if connector:
+            robots, err = db.get_current_robot()
+            if not err and robots:
+                target_robots = [r for r in robots if r.map == map_name]
+                for robot in target_robots:
+                    region_id = robot.region_id or 1
+                    robot_id = robot.id
+                    topic = f"smartfarm/{region_id}/robot/command/{robot_id}/set_schedule"
+                    connector.publish(topic, plans)
+                    print(f"[Set Schedule MQTT] Robot {robot_id} to topic {topic} with {len(plans)} plans")
+
         return {"status": "success"}
     except Exception as e:
         print(f"[Plan Save Error] {map_name}: {e}")
