@@ -68,11 +68,11 @@ class PlantStatistics:
 @dataclass
 class Actuator:
     id: int
-    state: str
 
     # 신규 입력시에만 필요
     type_id: int = field(default=None)
     region_id: int = field(default=None)
+    name: str = field(default=None)
 
     # 읽기 전용
     type_name: str = field(default=None)
@@ -110,8 +110,26 @@ class RobotParameter:
         safe: SAFE 모드 파라미터 {'speed': float, 'tolerance': float, 'inflation': float}
         ack:  ACK  모드 파라미터 {'speed': float, 'tolerance': float, 'inflation': float}
     """
+
     robot_id: int
     controller: str = field(default="RPP")
-    rpp:  dict = field(default_factory=lambda: {"speed": 0.12, "tolerance": 0.10, "inflation": 0.80})
-    safe: dict = field(default_factory=lambda: {"speed": 0.10, "tolerance": 0.10, "inflation": 0.60})
-    ack:  dict = field(default_factory=lambda: {"speed": 0.16, "tolerance": 0.10, "inflation": 0.50})
+    rpp: dict = field(
+        default_factory=lambda: {"speed": 0.12, "tolerance": 0.10, "inflation": 0.80}
+    )
+    safe: dict = field(
+        default_factory=lambda: {"speed": 0.10, "tolerance": 0.10, "inflation": 0.60}
+    )
+    ack: dict = field(
+        default_factory=lambda: {"speed": 0.16, "tolerance": 0.10, "inflation": 0.50}
+    )
+
+
+@dataclass
+class ActuatorThreshold:
+    # 항상 필요
+    actuator_id: int
+    sensor_type_id: int
+    threshold_value: float
+
+    # 읽기 전용
+    sensor_type_name: str = field(default="")

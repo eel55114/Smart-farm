@@ -97,7 +97,7 @@ CREATE TABLE actuator(
 	id INT PRIMARY KEY,             -- 개별 장비 ID
     type_id INT NOT NULL,           -- 장비 유형 ID
     region_id INT NOT NULL,         -- 재배지 ID
-    state VARCHAR(30) NOT NULL,     -- 장비 상태
+    name VARCHAR(30) NULL,          -- 장비 이름
     last_signal TIMESTAMP NOT NULL, -- 마지막 신호 연결
 
     FOREIGN KEY (type_id) REFERENCES actuator_type(id),
@@ -135,6 +135,25 @@ CREATE TABLE robot_history (
     state VARCHAR(50) NOT NULL,                                 -- 로봇 상태
 
     FOREIGN KEY (robot_id) REFERENCES robot(id)
+);
+
+-- 1. 센서 - 액추에이터 매핑 테이블 (구체적인 복수 센서 연결)
+CREATE TABLE sensor_actuator_map (
+    sensor_id INT NOT NULL,     -- 센서 ID
+    actuator_id INT NOT NULL,   -- 액추에이터 ID
+    PRIMARY KEY (sensor_id, actuator_id),
+    FOREIGN KEY (sensor_id) REFERENCES sensor(id),
+    FOREIGN KEY (actuator_id) REFERENCES actuator(id)
+);
+
+-- 2. 액추에이터 타입별 경계값 테이블
+CREATE TABLE actuator_threshold (
+    actuator_id INT NOT NULL,       -- 액추에이터 ID
+    sensor_type_id INT NOT NULL,    -- 센서 유형 ID
+    threshold_value FLOAT NOT NULL, -- 임계값
+    PRIMARY KEY (actuator_id, sensor_type_id),
+    FOREIGN KEY (actuator_id) REFERENCES actuator(id),
+    FOREIGN KEY (sensor_type_id) REFERENCES sensor_type(id)
 );
 
 -- 5분 단위 센서 데이터 집계 프로시저

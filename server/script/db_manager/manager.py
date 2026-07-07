@@ -1,7 +1,7 @@
 from contextlib import contextmanager
 from datetime import datetime
 
-from sqlalchemy import Float, cast, create_engine, func, select, update
+from sqlalchemy import Float, cast, create_engine, func, select, update, and_
 from sqlalchemy.orm import contains_eager, joinedload, scoped_session, sessionmaker
 
 from . import datatype, schema
@@ -207,9 +207,9 @@ class DBManager:
             for datum in data:
                 temp = datatype.Actuator(
                     id=datum.id,
-                    state=datum.state,
                     type_id=datum.type_id,
                     region_id=datum.region_id,
+                    name=datum.name,
                     type_name=datum.actuator_type.type_name,
                     region_name=datum.region.name,
                     last_signal=datum.last_signal,
@@ -217,6 +217,67 @@ class DBManager:
 
                 result.append(temp)
 
+            return result, None
+        except Exception as e:
+            session.rollback()
+            return [], e
+
+    def get_actuator_thresholds(
+        self,
+        actuator_ids: list[int] | None = None
+    ) -> tuple[list[datatype.ActuatorThreshold], Exception | None]:
+        """액추에이터별로 연결된 센서 타입 및 임계값을 가져옵니다.
+
+        Args:
+            actuator_ids (list[int], optional): 가져올 액추에이터들의 ID
+
+        Returns:
+            tuple[result, error]:
+                - result (list[datatype.ActuatorThreshold]): 결과
+                - error (Exception | None): 발생한 에러
+        """
+        session = self.session_local()
+        try:
+            stmt = (
+                select(
+                    schema.Actuator.id.label("actuator_id"),
+                    schema.SensorType.id.label("sensor_type_id"),
+                    schema.SensorType.type_name.label("sensor_type_name"),
+                    func.coalesce(schema.ActuatorThreshold.threshold_value, 0.0).label("threshold_value")
+                )
+                .join(schema.SensorActuatorMap, schema.Actuator.id == schema.SensorActuatorMap.actuator_id)
+                .join(schema.Sensor, schema.SensorActuatorMap.sensor_id == schema.Sensor.id)
+                .join(schema.SensorType, schema.Sensor.type_id == schema.SensorType.id)
+                .outerjoin(
+                    schema.ActuatorThreshold,
+                    and_(
+                        schema.Actuator.id == schema.ActuatorThreshold.actuator_id,
+                        schema.SensorType.id == schema.ActuatorThreshold.sensor_type_id
+                    )
+                )
+            )
+
+            if actuator_ids:
+                stmt = stmt.where(schema.Actuator.id.in_(actuator_ids))
+
+            stmt = stmt.group_by(
+                schema.Actuator.id,
+                schema.SensorType.id,
+                schema.SensorType.type_name,
+                schema.ActuatorThreshold.threshold_value
+            )
+
+            rows = session.execute(stmt).all()
+            result = []
+            for row in rows:
+                result.append(
+                    datatype.ActuatorThreshold(
+                        actuator_id=row.actuator_id,
+                        sensor_type_id=row.sensor_type_id,
+                        threshold_value=row.threshold_value,
+                        sensor_type_name=row.sensor_type_name
+                    )
+                )
             return result, None
         except Exception as e:
             session.rollback()
@@ -443,13 +504,19 @@ class DBManager:
             session.rollback()
             return e
 
-    def rename_robot_map(self, old_map_name: str, new_map_name: str) -> Exception | None:
+    def rename_robot_map(
+        self, old_map_name: str, new_map_name: str
+    ) -> Exception | None:
         """
         `robot` 테이블에서 `old_map_name`을 사용하는 모든 로봇의 `map` 필드를 `new_map_name`으로 교체합니다.
         """
         session = self.session_local()
         try:
-            stmt = update(schema.Robot).where(schema.Robot.map == old_map_name).values(map=new_map_name)
+            stmt = (
+                update(schema.Robot)
+                .where(schema.Robot.map == old_map_name)
+                .values(map=new_map_name)
+            )
             session.execute(stmt)
             session.commit()
             return None
@@ -463,7 +530,11 @@ class DBManager:
         """
         session = self.session_local()
         try:
-            stmt = update(schema.Robot).where(schema.Robot.map == map_name).values(map=None)
+            stmt = (
+                update(schema.Robot)
+                .where(schema.Robot.map == map_name)
+                .values(map=None)
+            )
             session.execute(stmt)
             session.commit()
             return None
@@ -665,9 +736,9 @@ class DBManager:
 
             if existing is not None:
                 existing.controller = param.controller
-                existing.rpp  = param.rpp
+                existing.rpp = param.rpp
                 existing.safe = param.safe
-                existing.ack  = param.ack
+                existing.ack = param.ack
             else:
                 new_row = schema.RobotParameter(
                     robot_id=param.robot_id,
@@ -684,7 +755,6 @@ class DBManager:
         except Exception as e:
             session.rollback()
             return e
-
 
     def get_plant_statistics(
         self,
@@ -939,7 +1009,7 @@ class DBManager:
                 update_data.append(
                     {
                         "id": actuator.id,
-                        "state": actuator.state,
+                        "name": actuator.name,
                         "last_signal": last_signal,
                     }
                 )
@@ -947,6 +1017,40 @@ class DBManager:
             session.execute(update(schema.Actuator), update_data)
             session.commit()
 
+            return None
+        except Exception as e:
+            session.rollback()
+            return e
+
+    def save_actuator_thresholds(
+        self,
+        thresholds: list[datatype.ActuatorThreshold]
+    ) -> Exception | None:
+        """액추에이터별 센서 타입의 임계값을 DB에 저장(업데이트 또는 인서트)합니다.
+
+        Args:
+            thresholds (list[datatype.ActuatorThreshold]): 저장할 임계값 목록
+
+        Returns:
+            Exception | None: 발생한 에러
+        """
+        session = self.session_local()
+        try:
+            for t in thresholds:
+                exist = session.query(schema.ActuatorThreshold).filter_by(
+                    actuator_id=t.actuator_id,
+                    sensor_type_id=t.sensor_type_id
+                ).first()
+                if exist:
+                    exist.threshold_value = t.threshold_value
+                else:
+                    new_threshold = schema.ActuatorThreshold(
+                        actuator_id=t.actuator_id,
+                        sensor_type_id=t.sensor_type_id,
+                        threshold_value=t.threshold_value
+                    )
+                    session.add(new_threshold)
+            session.commit()
             return None
         except Exception as e:
             session.rollback()

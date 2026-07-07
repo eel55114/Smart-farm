@@ -2,9 +2,9 @@ from datetime import datetime
 from typing import List
 
 from sqlalchemy import (
+    JSON,
     DateTime,
     ForeignKey,
-    JSON,
     String,
     func,
 )
@@ -135,7 +135,7 @@ class Actuator(Base):
     id: Mapped[int] = mapped_column("id", primary_key=True, autoincrement=False)
     type_id: Mapped[int] = mapped_column("type_id", ForeignKey("actuator_type.id"))
     region_id: Mapped[int] = mapped_column("region_id", ForeignKey("region.id"))
-    state: Mapped[str] = mapped_column("state", String(30))
+    name: Mapped[str | None] = mapped_column("name", String(30), nullable=True)  # 장비 이름
     last_signal: Mapped[datetime] = mapped_column("last_signal")
 
     actuator_type: Mapped[ActuatorType] = relationship(back_populates="actuators")
@@ -176,13 +176,41 @@ class RobotParameter(Base):
     주행 알고리즘별 파라미터(speed, tolerance, inflation)과
     현재 활성 콘트롤러를 저장합니다.
     """
+
     __tablename__ = "robot_parameter"
     robot_id: Mapped[int] = mapped_column(
         "robot_id", ForeignKey("robot.id"), primary_key=True
     )
     controller: Mapped[str] = mapped_column("controller", String(20), default="RPP")
-    rpp:  Mapped[dict] = mapped_column("rpp",  JSON)
+    rpp: Mapped[dict] = mapped_column("rpp", JSON)
     safe: Mapped[dict] = mapped_column("safe", JSON)
-    ack:  Mapped[dict] = mapped_column("ack",  JSON)
+    ack: Mapped[dict] = mapped_column("ack", JSON)
 
     robot: Mapped["Robot"] = relationship(back_populates="parameters")
+
+
+class SensorActuatorMap(Base):
+    """sensor_actuator_map 테이블 ORM 모델.
+
+    개별 센서와 액추에이터 간의 매핑 관계를 저장합니다.
+    """
+    __tablename__ = "sensor_actuator_map"
+    sensor_id: Mapped[int] = mapped_column("sensor_id", ForeignKey("sensor.id"), primary_key=True)  # 센서 ID
+    actuator_id: Mapped[int] = mapped_column("actuator_id", ForeignKey("actuator.id"), primary_key=True)  # 액추에이터 ID
+
+    sensor: Mapped["Sensor"] = relationship()
+    actuator: Mapped["Actuator"] = relationship()
+
+
+class ActuatorThreshold(Base):
+    """actuator_threshold 테이블 ORM 모델.
+
+    액추에이터별 센서 타입의 동작 임계값을 저장합니다.
+    """
+    __tablename__ = "actuator_threshold"
+    actuator_id: Mapped[int] = mapped_column("actuator_id", ForeignKey("actuator.id"), primary_key=True)  # 액추에이터 ID
+    sensor_type_id: Mapped[int] = mapped_column("sensor_type_id", ForeignKey("sensor_type.id"), primary_key=True)  # 센서 유형 ID
+    threshold_value: Mapped[float] = mapped_column("threshold_value")  # 임계값
+
+    actuator: Mapped["Actuator"] = relationship()
+    sensor_type: Mapped["SensorType"] = relationship()
