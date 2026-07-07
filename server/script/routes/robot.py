@@ -277,11 +277,77 @@ def current_robot_state() -> str:
 
 @robot_bp.route("/api/robot_current_map")
 def current_robot_map():
-    test_mapdata = json.loads(
-        (pathlib.Path(__file__).parent / "___test_mapdata.json").read_text()
-    )
+    robot_id = request.args.get("robot", type=int)
+    if robot_id is None:
+        return {"error": "robot 파라미터가 필요합니다."}, 400
 
-    return {**test_mapdata}
+    robots_found, err = db.get_current_robot(robot_ids=[robot_id])
+    if err or not robots_found:
+        return {"error": "맵 정보가 없습니다. '일정 계획'에서 로봇 맵을 설정해 주세요."}, 404
+
+    map_name = robots_found[0].map
+    if not map_name:
+        return {"error": "맵 정보가 없습니다. '일정 계획'에서 로봇 맵을 설정해 주세요."}, 404
+
+    data, err = _parse_map_files(map_name)
+    if err:
+        return err
+    return data
+
+
+@robot_bp.route("/api/robot_set_map", methods=["POST"])
+def robot_set_map():
+    """로봇의 현재 지도를 설정하고 MQTT set_map 커맨드를 발송합니다."""
+    import base64
+    import yaml as _yaml
+
+    body = request.get_json() or {}
+    robot_id = body.get("robot")
+    map_name = body.get("map_name")
+
+    if robot_id is None or not map_name:
+        return {"error": "robot, map_name 필드가 필요합니다."}, 400
+
+    map_dir = pathlib.Path(__file__).parent.parent / "map"
+    pgm_path = map_dir / f"{map_name}.pgm"
+    yaml_path = map_dir / f"{map_name}.yaml"
+
+    if not pgm_path.exists() or not yaml_path.exists():
+        return {"error": f"지도 파일 '{map_name}'을 찾을 수 없습니다."}, 404
+
+    # DB 갱신
+    err = db.update_robot_map(robot_id, map_name)
+    if err:
+        return {"error": f"DB 갱신 실패: {err}"}, 500
+
+    # MQTT 발송
+    try:
+        pgm_bytes = pgm_path.read_bytes()
+        yaml_str = yaml_path.read_text(encoding="utf-8")
+
+        robots_found, _ = db.get_current_robot(robot_ids=[robot_id])
+        region_id = 1
+        if robots_found:
+            region_id = robots_found[0].region_id or 1
+
+        connector = current_app.config.get("MQTT_CONNECTOR")
+        if connector:
+            topic = f"smartfarm/{region_id}/robot/command/{robot_id}/set_map"
+            payload = {
+                "name": map_name,
+                "img": base64.b64encode(pgm_bytes).decode("utf-8"),
+                "inform": yaml_str,
+            }
+            connector.publish(topic, payload)
+            print(f"[Set Map] Robot {robot_id}: '{map_name}' → MQTT {topic}")
+        else:
+            print(f"[Set Map] Robot {robot_id}: '{map_name}' → MQTT connector 없음, DB만 갱신됨")
+    except Exception as e:
+        print(f"[Set Map MQTT Error] {e}")
+        # MQTT 실패해도 DB는 이미 갱신됐으므로 성공 응답
+        return {"map": map_name, "warning": f"MQTT 발송 실패: {e}"}, 200
+
+    return {"map": map_name}, 200
 
 
 @robot_bp.route("/api/robot_moveto", methods=["POST"])
@@ -317,6 +383,38 @@ def robot_moveto():
             connector.publish(topic, payload)
 
     return {"status": "success", "message": f"Moving to ({x}, {y})"}, 200
+
+
+@robot_bp.route("/api/robot_send_waypoint", methods=["POST"])
+def robot_send_waypoint():
+    body = request.get_json() or {}
+    robot_id = body.get("robot")
+    waypoint = body.get("waypoint")
+    sequence = body.get("sequence")
+
+    if robot_id is None or waypoint is None or sequence is None:
+        return {"error": "robot, waypoint, sequence 필드가 필요합니다."}, 400
+
+    robots_found, _ = db.get_current_robot(robot_ids=[robot_id])
+    region_id = 1
+    if robots_found:
+        region_id = robots_found[0].region_id or 1
+
+    connector = current_app.config.get("MQTT_CONNECTOR")
+    if connector:
+        topic = f"smartfarm/{region_id}/robot/command/{robot_id}/waypoint"
+        payload = {
+            "sequence": sequence,
+            "waypoint": waypoint
+        }
+        success = connector.publish(topic, payload)
+        if success:
+            print(f"[Send Waypoint] Robot {robot_id}: {len(waypoint)} waypoints → MQTT {topic}")
+            return {"status": "success"}, 200
+        else:
+            return {"error": "MQTT 전송에 실패했습니다."}, 500
+    else:
+        return {"error": "MQTT 커넥터가 준비되지 않았습니다."}, 500
 
 
 @robot_bp.route("/api/robot_set_initial_pose", methods=["POST"])

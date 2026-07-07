@@ -197,9 +197,11 @@ function initPlanManager() {
     // 웨이포인트 마커 패스
     const D_PATH  = 'M -40 30 C 4 -3 -4 -3 40 30 C 51 39 55 41 55 57 V 100 C 55 109 49 119 34 112 C 7 100 -7 100 -34 112 C -49 118 -55 109 -55 100 V 57 C -55 40 -51 39 -40 30 Z';
     const UD_PATH = 'M -20 6 C -10 -2, 10 -2, 20 6 C 30 14, 46 30, 54 40 C 62 50, 62 70, 54 80 C 46 90, 30 106, 20 114 C 10 122, -10 122, -20 114 C -30 106, -46 90, -54 80 C -62 70, -62 50, -54 40 C -46 30, -30 14, -20 6 Z';
+    const MS_PATH = D_PATH; // 촬영 마커는 지향 마커와 동일한 패스, 초록색으로 구분
     const TARGET_PX = 24;
     const D_NAT  = 110;
     const UD_NAT = 124;
+    const MS_NAT = D_NAT;  // 촬영 마커 자연 크기 = 지향 마커와 동일
 
     // 계획 상태
     let plans = [];
@@ -243,6 +245,15 @@ function initPlanManager() {
     const elBtnCancel     = document.getElementById('btn-cancel-plan');
     const elBtnSave       = document.getElementById('btn-save-plan');
 
+    // 추가 스케줄 및 실행 메뉴 DOM 참조
+    const elScheduleSelector = document.getElementById('schedule-selector');
+    const elScheduleListContainer = document.getElementById('schedule-list-container');
+    const elBtnAddSchedule = document.getElementById('btn-add-schedule');
+    const elExecuteMenu = document.getElementById('execute-menu');
+    const elBtnExecutePlan = document.getElementById('btn-execute-plan');
+
+    let activeEditSchedId = -1;  // 편집 중인 스케줄 ID (-1이면 없음)
+
     // ── 헬퍼 ──────────────────────────────────────────────────────────────
     const dc = o => JSON.parse(JSON.stringify(o));
 
@@ -257,6 +268,7 @@ function initPlanManager() {
 
     function syncSaveMenu() {
         elSaveMenu.style.display = (isDirty && editedPlan) ? 'flex' : 'none';
+        elExecuteMenu.style.display = editedPlan ? 'block' : 'none';
     }
 
     function w2c(wx, wy) {           // world → canvas 좌표 변환
@@ -291,14 +303,20 @@ function initPlanManager() {
             const res  = await fetch(`/api/plans/${encodeURIComponent(mapName)}`);
             const data = await res.json();
             plans = data.plans || [];
+            plans.forEach(p => {
+                if (!p.schedule) p.schedule = [];
+            });
         } catch (e) { console.error('[Plan Load]', e); plans = []; }
 
         selectedIdx   = plans.length > 0 ? 0 : -1;
         editedPlan    = selectedIdx >= 0 ? dc(plans[selectedIdx]) : null;
+        if (editedPlan && !editedPlan.schedule) editedPlan.schedule = [];
         isDirty       = false;
+        activeEditSchedId = -1;
         changeActiveEditSeq(-1);
         renderDropdown();
         renderNodeList();
+        renderScheduleList();
         renderMarkers();
         syncSaveMenu();
     }
@@ -306,10 +324,12 @@ function initPlanManager() {
     function clearPlans() {
         plans = []; selectedIdx = -1; editedPlan = null;
         isDirty = false;
+        activeEditSchedId = -1;
         changeActiveEditSeq(-1);
         clearMarkers();
         renderDropdown();
         renderNodeList();
+        renderScheduleList();
         syncSaveMenu();
     }
 
@@ -338,9 +358,12 @@ function initPlanManager() {
         if (isNaN(idx) || idx < 0) return;
         selectedIdx   = idx;
         editedPlan    = dc(plans[selectedIdx]);
+        if (editedPlan && !editedPlan.schedule) editedPlan.schedule = [];
         isDirty       = false;
+        activeEditSchedId = -1;
         changeActiveEditSeq(-1);
         renderNodeList();
+        renderScheduleList();
         renderMarkers();
         syncSaveMenu();
     });
@@ -352,14 +375,16 @@ function initPlanManager() {
         let name = base, n = 2;
         const used = plans.map(p => p.name);
         while (used.includes(name)) name = `${base} (${n++})`;
-        plans.push({ name, waypoint: [], sequence: [] });
+        plans.push({ name, waypoint: [], sequence: [], schedule: [] });
         await writePlans();
         selectedIdx   = plans.length - 1;
         editedPlan    = dc(plans[selectedIdx]);
         isDirty       = false;
+        activeEditSchedId = -1;
         changeActiveEditSeq(-1);
         renderDropdown();
         renderNodeList();
+        renderScheduleList();
         renderMarkers();
         syncSaveMenu();
     });
@@ -375,10 +400,13 @@ function initPlanManager() {
                 await writePlans();
                 selectedIdx   = plans.length > 0 ? Math.min(selectedIdx, plans.length - 1) : -1;
                 editedPlan    = selectedIdx >= 0 ? dc(plans[selectedIdx]) : null;
+                if (editedPlan && !editedPlan.schedule) editedPlan.schedule = [];
                 isDirty       = false;
+                activeEditSchedId = -1;
                 changeActiveEditSeq(-1);
                 renderDropdown();
                 renderNodeList();
+                renderScheduleList();
                 renderMarkers();
                 syncSaveMenu();
             }
@@ -424,10 +452,10 @@ function initPlanManager() {
                 `<span class="badge bg-secondary node-id-badge">${node.id}</span>` +
                 `<span class="node-coords">` +
                     `x<b>${parseFloat(node.x).toFixed(2)}</b> ` +
-                    `y<b>${parseFloat(node.y).toFixed(2)}</b> ` +
-                    `각도<b>${tDeg}</b>` +
+                    `y<b>${parseFloat(node.y).toFixed(2)}</b>` +
+                    (node.type !== 'ud' ? ` 각도<b>${tDeg}</b>` : '') +
                 `</span>` +
-                `<span class="badge ${node.type === 'd' ? 'bg-primary' : 'bg-warning text-dark'} node-type-badge">${node.type === 'd' ? '유향' : '무향'}</span>` +
+                `<span class="badge ${node.type === 'd' ? 'bg-primary' : node.type === 'ms' ? 'bg-success' : 'bg-warning text-dark'} node-type-badge">${node.type === 'd' ? '지향' : node.type === 'ms' ? '촬영' : '위치'}</span>` +
                 `<button class="btn-node-del" title="노드 삭제">✕</button>`;
 
             card.querySelector('.btn-node-del').addEventListener('click', (e) => {
@@ -459,9 +487,10 @@ function initPlanManager() {
                     const marker = waypointMarkers[seqIdx];
                     if (marker) {
                         const isD = node.type === 'd';
+                        const isMs = node.type === 'ms';
                         marker.set({
-                            fill: isD ? 'rgba(13,110,253,0.28)' : 'rgba(255,160,0,0.28)',
-                            stroke: isD ? '#0d6efd' : '#ff8c00'
+                            fill: isD ? 'rgba(13,110,253,0.28)' : isMs ? 'rgba(59,191,78,0.28)' : 'rgba(255,160,0,0.28)',
+                            stroke: isD ? '#0d6efd' : isMs ? '#3bbf4e' : '#ff8c00'
                         });
                         canvas.requestRenderAll();
                     }
@@ -509,9 +538,11 @@ function initPlanManager() {
                     `<span class="badge bg-secondary">${node.id}</span>` +
                     `<div class="btn-group btn-group-sm ms-auto">` +
                         `<input type="radio" class="btn-check" name="ne-type-${seqIdx}" id="ne-d-${seqIdx}" value="d" autocomplete="off" ${node.type === 'd' ? 'checked' : ''}>` +
-                        `<label class="btn btn-outline-primary" for="ne-d-${seqIdx}">유향</label>` +
+                        `<label class="btn btn-outline-primary" for="ne-d-${seqIdx}">지향</label>` +
                         `<input type="radio" class="btn-check" name="ne-type-${seqIdx}" id="ne-ud-${seqIdx}" value="ud" autocomplete="off" ${node.type === 'ud' ? 'checked' : ''}>` +
-                        `<label class="btn btn-outline-warning" for="ne-ud-${seqIdx}">무향</label>` +
+                        `<label class="btn btn-outline-warning" for="ne-ud-${seqIdx}">위치</label>` +
+                        `<input type="radio" class="btn-check" name="ne-type-${seqIdx}" id="ne-ms-${seqIdx}" value="ms" autocomplete="off" ${node.type === 'ms' ? 'checked' : ''}>` +
+                        `<label class="btn btn-outline-success" for="ne-ms-${seqIdx}">촬영</label>` +
                     `</div>` +
                 `</div>` +
                 `<div class="d-flex gap-1 mb-2">` +
@@ -626,9 +657,12 @@ function initPlanManager() {
 
     elBtnCancel.addEventListener('click', () => {
         editedPlan    = selectedIdx >= 0 ? dc(plans[selectedIdx]) : null;
+        if (editedPlan && !editedPlan.schedule) editedPlan.schedule = [];
         isDirty       = false;
+        activeEditSchedId = -1;
         changeActiveEditSeq(-1);
         renderNodeList();
+        renderScheduleList();
         renderMarkers();
         syncSaveMenu();
     });
@@ -663,19 +697,26 @@ function initPlanManager() {
 
         // 2. 각 노드 마커 그리기
         nodes.forEach((node, seqIdx) => {
-            const isD = node.type === 'd';
-            const nat = isD ? D_NAT : UD_NAT;
-            const sizeFactor = isD ? 0.7 : 0.8; // d 마커는 70%, ud 마커는 80% 크기
+            const isD  = node.type === 'd';
+            const isMs = node.type === 'ms';
+            const nat = isD ? D_NAT : isMs ? MS_NAT : UD_NAT;
+            const sizeFactor = (isD || isMs) ? 0.7 : 0.8; // d/ms 마커는 70%, ud 마커는 80% 크기
             const sc  = (TARGET_PX * sizeFactor) / (nat * zoom);
             const sw  = 3 * nat / (TARGET_PX * sizeFactor); // 화면상 외곽선 두께가 항상 3px이 되도록 비율 계산
             const pos = w2c(node.x, node.y);
-            const ang = isD ? -(node.theta * 180 / Math.PI) + 90 : 0;
+            const ang = (isD || isMs) ? -(node.theta * 180 / Math.PI) + 90 : 0;
 
             const inEdit = seqIdx === activeEditSeq;
-            const fill = inEdit ? 'rgba(220,53,69,0.28)' : (isD ? 'rgba(13,110,253,0.28)' : 'rgba(255,160,0,0.28)');
-            const stroke = inEdit ? '#dc3545' : (isD ? '#0d6efd' : '#ff8c00');
+            const fill   = inEdit ? 'rgba(220,53,69,0.28)'
+                         : isD    ? 'rgba(13,110,253,0.28)'
+                         : isMs   ? 'rgba(59,191,78,0.28)'
+                         :          'rgba(255,160,0,0.28)';
+            const stroke = inEdit ? '#dc3545'
+                         : isD    ? '#0d6efd'
+                         : isMs   ? '#3bbf4e'
+                         :          '#ff8c00';
 
-            const m = new fabric.Path(isD ? D_PATH : UD_PATH, {
+            const m = new fabric.Path(isMs ? MS_PATH : isD ? D_PATH : UD_PATH, {
                 fill:         fill,
                 stroke:       stroke,
                 strokeWidth:  sw,
@@ -841,6 +882,182 @@ function initPlanManager() {
             canvas.hoverCursor = 'move';
         }
     });
+
+    // ── 스케줄 리스트 렌더링 ──────────────────────────────────────────────────
+    function renderScheduleList() {
+        elScheduleListContainer.innerHTML = '';
+        if (!editedPlan) {
+            elScheduleSelector.style.display = 'none';
+            return;
+        }
+
+        elScheduleSelector.style.display = 'block';
+
+        if (!editedPlan.schedule) {
+            editedPlan.schedule = [];
+        }
+
+        editedPlan.schedule.forEach((sched) => {
+            elScheduleListContainer.appendChild(makeScheduleCard(sched));
+        });
+    }
+
+    function makeScheduleCard(sched) {
+        const inEdit = sched.id === activeEditSchedId;
+        const card = document.createElement('div');
+        
+        if (!inEdit) {
+            /* ── 일반 모드 ── */
+            const hourStr = String(sched.hour).padStart(2, '0');
+            const minuteStr = String(sched.minute).padStart(2, '0');
+
+            card.className = 'schedule-card d-flex align-items-center justify-content-between p-2 border rounded mb-1 bg-white';
+            card.style.cursor = 'pointer';
+            card.innerHTML =
+                `<span class="fw-bold text-dark" style="font-size: 0.875rem;">${sched.name}</span>` +
+                `<span class="badge bg-light text-dark border" style="font-size: 0.875rem;">매일 ${hourStr}시 ${minuteStr}분</span>`;
+            
+            card.addEventListener('click', () => {
+                activeEditSchedId = sched.id;
+                renderScheduleList();
+            });
+        } else {
+            /* ── 스케줄 편집 모드 ── */
+            card.className = 'schedule-card schedule-card--edit p-3 border rounded border-primary mb-1 bg-light';
+            card.innerHTML =
+                `<div class="mb-2">` +
+                    `<label class="form-label small text-secondary fw-bold mb-1">일정 이름</label>` +
+                    `<input type="text" id="sched-edit-name-${sched.id}" class="form-control form-control-sm" value="${sched.name}">` +
+                `</div>` +
+                `<div class="d-flex align-items-center gap-1 mb-3">` +
+                    `<span class="small text-dark fw-semibold">매일</span>` +
+                    `<input type="number" id="sched-edit-hour-${sched.id}" class="form-control form-control-sm text-center" style="width: 65px;" value="${sched.hour}" min="0" max="23">` +
+                    `<span class="small text-dark fw-semibold">시</span>` +
+                    `<input type="number" id="sched-edit-minute-${sched.id}" class="form-control form-control-sm text-center" style="width: 65px;" value="${sched.minute}" min="0" max="59">` +
+                    `<span class="small text-dark fw-semibold">분</span>` +
+                `</div>` +
+                `<div class="d-flex gap-1 justify-content-end">` +
+                    `<button class="btn btn-outline-danger btn-sm px-2 py-1 btn-sched-del">삭제</button>` +
+                    `<div class="ms-auto"></div>` +
+                    `<button class="btn btn-outline-secondary btn-sm px-3 py-1 btn-sched-cancel">취소</button>` +
+                    `<button class="btn btn-primary btn-sm px-3 py-1 btn-sched-confirm border-0 shadow-sm">확인</button>` +
+                `</div>`;
+            
+            card.querySelector('.btn-sched-del').addEventListener('click', (e) => {
+                e.stopPropagation();
+                showConfirm('일정 삭제', `스케줄 '${sched.name}'을(를) 삭제하시겠습니까?`, () => {
+                    editedPlan.schedule = editedPlan.schedule.filter(s => s.id !== sched.id);
+                    activeEditSchedId = -1;
+                    markDirty();
+                    renderScheduleList();
+                });
+            });
+
+            card.querySelector('.btn-sched-cancel').addEventListener('click', (e) => {
+                e.stopPropagation();
+                activeEditSchedId = -1;
+                renderScheduleList();
+            });
+
+            card.querySelector('.btn-sched-confirm').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const newName = document.getElementById(`sched-edit-name-${sched.id}`).value.trim();
+                let newHour = parseInt(document.getElementById(`sched-edit-hour-${sched.id}`).value);
+                let newMinute = parseInt(document.getElementById(`sched-edit-minute-${sched.id}`).value);
+
+                if (!newName) {
+                    alert('일정 이름을 입력해 주세요.');
+                    return;
+                }
+                if (isNaN(newHour) || newHour < 0 || newHour > 23) {
+                    alert('시는 0에서 23 사이의 숫자여야 합니다.');
+                    return;
+                }
+                if (isNaN(newMinute) || newMinute < 0 || newMinute > 59) {
+                    alert('분은 0에서 59 사이의 숫자여야 합니다.');
+                    return;
+                }
+
+                sched.name = newName;
+                sched.hour = newHour;
+                sched.minute = newMinute;
+
+                activeEditSchedId = -1;
+                markDirty();
+                renderScheduleList();
+            });
+        }
+
+        return card;
+    }
+
+    // 일정 추가 이벤트 바인딩
+    elBtnAddSchedule.addEventListener('click', () => {
+        if (!editedPlan) return;
+        if (!editedPlan.schedule) editedPlan.schedule = [];
+
+        const nextSchedId = editedPlan.schedule.length > 0
+            ? Math.max(...editedPlan.schedule.map(s => s.id)) + 1 : 0;
+        
+        const newSched = {
+            id: nextSchedId,
+            name: "일정 " + (nextSchedId + 1),
+            hour: 12,
+            minute: 0
+        };
+
+        editedPlan.schedule.push(newSched);
+        activeEditSchedId = nextSchedId;
+        markDirty();
+        renderScheduleList();
+    });
+
+    // ── 계획 실행 처리 ────────────────────────────────────────────────────────
+    const execModal = new bootstrap.Modal(document.getElementById('execute-modal'));
+
+    elBtnExecutePlan.addEventListener('click', () => {
+        if (!editedPlan) return;
+        execModal.show();
+    });
+
+    document.getElementById('execute-modal-ok').addEventListener('click', () => {
+        execModal.hide();
+        executeCurrentPlan();
+    });
+
+    async function executeCurrentPlan() {
+        if (!editedPlan) return;
+        if (typeof ROBOT_ID === 'undefined' || !ROBOT_ID) {
+            alert('연결된 로봇 ID가 없습니다.');
+            return;
+        }
+
+        const payload = {
+            sequence: editedPlan.sequence,
+            waypoint: editedPlan.waypoint
+        };
+
+        try {
+            const res = await fetch('/api/robot_send_waypoint', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    robot: ROBOT_ID,
+                    waypoint: payload.waypoint,
+                    sequence: payload.sequence
+                })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert('웨이포인트 전송 및 계획 실행 명령이 성공적으로 전송되었습니다.');
+            } else {
+                alert('실행 전송 실패: ' + (data.error || '알 수 없는 오류'));
+            }
+        } catch (e) {
+            console.error('[Plan Execute]', e);
+            alert('명령 전송 중 서버 연결 오류 발생');
+        }
+    }
 
     // ── 전역 노출 ──────────────────────────────────────────────────────────
     window._planLoadPlans      = loadPlans;

@@ -68,8 +68,9 @@ class Connector(Node):
         )
         self.goal_pose_pub = self.create_publisher(PoseStamped, "/goal_pose", 10)
         self.publish_param_pub = self.create_publisher(String, "/publish_param", 10)
+        self.schedule_pub = self.create_publisher(String, "/json_schedule", 10)
+        self.sequence_pub = self.create_publisher(String, "/json_sequence", 10)
 
-        # ROS Subscribers (참조 유지로 GC 방지)
         self._subs = [
             self.create_subscription(String, "/robot_state", self._on_robot_state, 1),
             self.create_subscription(String, "/robot_mode", self._on_robot_mode, 10),
@@ -180,11 +181,23 @@ class Connector(Node):
             "initial_pose": self._on_initial_pose,
             "goal_pose": self._on_goal_pose,
             "publish_param": self._on_publish_param,
+            "execute_waypoint_plan": self._on_sequence,
+            "set_schedule": self._on_schedule,
         }.items():
             client.message_callback_add(cmd + suffix, cb)
 
         # 위에서 등록되지 않은 커맨드의 fallback
         client.message_callback_add(cmd + "#", self._on_robot_command)
+
+    def _on_schedule(self, client, userdata, msg) -> None:
+        ros_msg = String()
+        ros_msg.data = msg
+        self.schedule_pub.publish(ros_msg)
+
+    def _on_sequence(self, client, userdata, msg) -> None:
+        ros_msg = String()
+        ros_msg.data = msg
+        self.schedule_pub.publish(ros_msg)
 
     def _on_set_map(self, client, userdata, msg) -> None:
         """set_map: 로컬 파일 해시 비교 후 지도 발행 또는 서버에 요청."""

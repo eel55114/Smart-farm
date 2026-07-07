@@ -189,3 +189,38 @@ ROS 매핑: std_msgs/String
     "time": (int) timestamp,
     "data": (string) log message,
 }
+
+### 2-1-12. 웨이포인트 전송
+파이<-
+- 토픽명: `smartfarm/{region_id}/robot/command/{robot_id}/execute_waypoint_plan`
+- 페이로드: json string {
+    "sequence": (int list): sequence of waypoint IDs.
+    "waypoint": json [{
+        "id": (int),
+        "type": (enum["d", "ud", "ms"]),
+        "x": 1.282,
+        "y": -2.368,
+        "theta": 0
+    }]
+}
+
+### 2-1-13. 스케줄 전송
+파이<-
+- 토픽명: `smartfarm/{region_id}/robot/command/{robot_id}/set_schedule`
+- 페이로드: json string {
+    "name": (string)
+    "sequence": (int list): sequence of waypoint IDs.
+    "waypoint": json [{
+        "id": (int),
+        "type": (enum["d", "ud", "ms"]),
+        "x": 1.282,
+        "y": -2.368,
+        "theta": 0
+    }]
+    "schedule": json [{
+        "id": (int),
+        "name": (string),
+        "hour": (int),
+        "minute": (int)
+    }]
+}

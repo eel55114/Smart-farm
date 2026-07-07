@@ -1,5 +1,7 @@
+import base64
 import json
 import os
+import pathlib
 import queue
 import threading
 import time
@@ -83,11 +85,49 @@ class Connector:
             self.queue.put(
                 datatype.Robot(id=robot_id, state=payload["data"], last_signal=dt)
             )
+        elif msg_type == "get_map":
+            self._handle_get_map(robot_id, int(topic[1]))
         elif msg_type in ("state", "battery", "amcl_pose", "robot_mode"):
             if self.on_robot_ephemeral_data:
                 self.on_robot_ephemeral_data(
                     robot_id, {"type": msg_type, "payload": payload}
                 )
+
+    def _handle_get_map(self, robot_id: int, region_id: int) -> None:
+        """로봇의 get_map 텔레메트리 수신 시, DB에서 할당된 지도를 읽어 map_data 커맨드로 발송합니다."""
+        try:
+            robots, err = self.db.get_current_robot(robot_ids=[robot_id])
+            if err or not robots:
+                print(f"[Get Map] Robot {robot_id}: DB 조회 실패 또는 로봇 없음")
+                return
+
+            map_name = robots[0].map
+            if not map_name:
+                print(f"[Get Map] Robot {robot_id}: 할당된 지도 없음")
+                return
+
+            map_dir = pathlib.Path(__file__).parent / "map"
+            pgm_path = map_dir / f"{map_name}.pgm"
+            yaml_path = map_dir / f"{map_name}.yaml"
+
+            if not pgm_path.exists() or not yaml_path.exists():
+                print(f"[Get Map] Robot {robot_id}: 지도 파일 '{map_name}' 없음")
+                return
+
+            pgm_bytes = pgm_path.read_bytes()
+            yaml_str = yaml_path.read_text(encoding="utf-8")
+
+            topic = f"smartfarm/{region_id}/robot/command/{robot_id}/map_data"
+            payload = {
+                "name": map_name,
+                "img": base64.b64encode(pgm_bytes).decode("utf-8"),
+                "inform": yaml_str,
+            }
+            self.publish(topic, payload)
+            print(f"[Get Map] Robot {robot_id}: '{map_name}' → {topic}")
+
+        except Exception as e:
+            print(f"[Get Map Error] Robot {robot_id}: {e}")
 
     def publish(
         self, topic: str, payload: dict, qos: int = 1, retain: bool = False
