@@ -191,13 +191,13 @@ class Connector(Node):
 
     def _on_schedule(self, client, userdata, msg) -> None:
         ros_msg = String()
-        ros_msg.data = msg.payload
+        ros_msg.data = msg.payload.decode("utf-8")
         self.schedule_pub.publish(ros_msg)
 
     def _on_sequence(self, client, userdata, msg) -> None:
         ros_msg = String()
-        ros_msg.data = msg.payload
-        self.schedule_pub.publish(ros_msg)
+        ros_msg.data = msg.payload.decode("utf-8")
+        self.sequence_pub.publish(ros_msg)
 
     def _on_set_map(self, client, userdata, msg) -> None:
         """set_map: 로컬 파일 해시 비교 후 지도 발행 또는 서버에 요청."""
