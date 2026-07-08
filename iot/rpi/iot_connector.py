@@ -134,12 +134,12 @@ class Connector:
 
     def on_message(self, client, userdata, msg):
         topic = msg.topic
-        payload = msg.payload.decode("utf-8")
+        payload = json.loads(msg.payload.decode("utf-8"))
 
         actuator_id = topic.split("/")[-1]
 
         try:
-            [float(value) for value in payload.split("+")]
+            [float(value) for value in payload["data"].split("+")]
         except:
             print(f"유효하지 않은 형식: {payload}")
 
