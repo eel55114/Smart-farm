@@ -134,19 +134,21 @@ class Connector:
 
     def on_message(self, client, userdata, msg):
         topic = msg.topic
-        payload = json.loads(msg.payload.decode("utf-8"))
 
         actuator_id = topic.split("/")[-1]
 
         try:
-            [float(value) for value in payload["data"].split("+")]
+            payload = msg.payload.decode("utf-8")
+            data = json.loads(payload)["data"]
+            [float(value) for value in data.split("+")]
         except:
             print(f"유효하지 않은 형식: {payload}")
 
         try:
-            if payload and self.bt_sock:
-                msg = f"{actuator_id}+1+{payload}".encode("utf-8")
+            if data and self.bt_sock:
+                msg = f"{actuator_id}+1+{data}".encode("utf-8")
                 self.bt_sock.send(msg)
+                print(msg)
         except Exception as e:
             print(f"블루투스 데이터 전송 실패: {e}")
 
