@@ -176,7 +176,7 @@ def environment():
             type_records = [r for r in graph_records if r.sensor_type == type_id]
             records_by_date = {}
             for r in type_records:
-                date_str = r.time_bucket.strftime("%m%d %H:%M:%S")
+                date_str = r.time_bucket.strftime("%y%m%d")
                 records_by_date.setdefault(date_str, []).append(r)
 
             for label in labels:
