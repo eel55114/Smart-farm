@@ -30,7 +30,7 @@ class Connector:
         except AssertionError:
             print("환경 변수 인식 실패")
             return
-        model_path = r"C:\python-opencv\best04291048.pt"
+        model_path = "best04291048.pt"
         try:
             self.model = YOLO(model_path)
             print("YOLO 모델 로드 성공!")
