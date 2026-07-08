@@ -15,6 +15,7 @@ from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from nav_msgs.msg import OccupancyGrid
 from paho.mqtt.enums import CallbackAPIVersion
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile
 from rosidl_runtime_py.set_message import set_message_fields
 from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String
@@ -58,22 +59,29 @@ class Connector(Node):
 
         self.mqtt = mqtt.Client(CallbackAPIVersion.VERSION2)
         self.mqtt.on_connect = self.on_connect
-
+        map_qos_profile = QoSProfile(
+            depth=1,
+            history=HistoryPolicy.KEEP_LAST,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,  # 👈 이 부분이 핵심입니다!
+        )
         # ROS Publishers
         self.robot_mode_pub = self.create_publisher(String, "/robot_mode", 10)
         self.remote_control_pub = self.create_publisher(String, "/remote_control", 10)
-        self.map_pub = self.create_publisher(OccupancyGrid, "/map", 10)
+        self.map_pub = self.create_publisher(OccupancyGrid, "/map", map_qos_profile)
         self.initial_pose_pub = self.create_publisher(
             PoseWithCovarianceStamped, "/initialpose", 10
         )
         self.goal_pose_pub = self.create_publisher(PoseStamped, "/goal_pose", 10)
         self.publish_param_pub = self.create_publisher(String, "/publish_param", 10)
+        self.schedule_pub = self.create_publisher(String, "/json_schedule", 10)
+        self.sequence_pub = self.create_publisher(String, "/json_sequence", 10)
 
-        # ROS Subscribers (참조 유지로 GC 방지)
         self._subs = [
             self.create_subscription(String, "/robot_state", self._on_robot_state, 1),
             self.create_subscription(String, "/robot_mode", self._on_robot_mode, 10),
-            self.create_subscription(String, "/battery", self._on_battery, 1),
+            self.create_subscription(
+                String, "/web_bridge/battery", self._on_battery, 1
+            ),
             self.create_subscription(String, "/robot_log", self._on_robot_log, 10),
             self.create_subscription(
                 CompressedImage, "/captured_image/compressed", self._on_plant_img, 1
@@ -180,11 +188,23 @@ class Connector(Node):
             "initial_pose": self._on_initial_pose,
             "goal_pose": self._on_goal_pose,
             "publish_param": self._on_publish_param,
+            "waypoint": self._on_sequence,
+            "set_schedule": self._on_schedule,
         }.items():
             client.message_callback_add(cmd + suffix, cb)
 
         # 위에서 등록되지 않은 커맨드의 fallback
         client.message_callback_add(cmd + "#", self._on_robot_command)
+
+    def _on_schedule(self, client, userdata, msg) -> None:
+        ros_msg = String()
+        ros_msg.data = msg.payload.decode("utf-8")
+        self.schedule_pub.publish(ros_msg)
+
+    def _on_sequence(self, client, userdata, msg) -> None:
+        ros_msg = String()
+        ros_msg.data = msg.payload.decode("utf-8")
+        self.sequence_pub.publish(ros_msg)
 
     def _on_set_map(self, client, userdata, msg) -> None:
         """set_map: 로컬 파일 해시 비교 후 지도 발행 또는 서버에 요청."""

@@ -19,19 +19,10 @@ IoT 허브 -> 서버
     "value": (int) value,
 }
 
-### 2-2. 액추에이터 조작
+### 2-2. 액추에이터 동작값 변경
 서버 -> IoT 허브
-- 토픽명: `smartfarm/{region_id}/iot/command/device/{device_id}`
-- 페이로드: json string {
-    "on": bool,
-}
-### 2-3. 장치 상태
-IoT 허브 -> 서버
-- 토픽명: `smartfarm/{region_id}/iot/telemetry/device/{device_id}`
-- 페이로드: json string {
-    "time": (int) timestamp,
-    "state": bool,
-}
+- 토픽명: `smartfarm/{region_id}/iot/command/actuator/{actuator_id}`
+- 페이로드: (string) 
 
 # 3. 로봇
 ### 2-1. 로봇 정보 발신
@@ -188,4 +179,39 @@ ROS 매핑: std_msgs/String
 - 페이로드: json string {
     "time": (int) timestamp,
     "data": (string) log message,
+}
+
+### 2-1-12. 웨이포인트 전송
+파이<-
+- 토픽명: `smartfarm/{region_id}/robot/command/{robot_id}/waypoint`
+- 페이로드: json string {
+    "sequence": (int list): sequence of waypoint IDs.
+    "waypoint": json [{
+        "id": (int),
+        "type": (enum["d", "ud", "ms"]),
+        "x": 1.282,
+        "y": -2.368,
+        "theta": 0
+    }]
+}
+
+### 2-1-13. 스케줄 전송
+파이<-
+- 토픽명: `smartfarm/{region_id}/robot/command/{robot_id}/set_schedule`
+- 페이로드: json string {
+    "name": (string)
+    "sequence": (int list): sequence of waypoint IDs.
+    "waypoint": json [{
+        "id": (int),
+        "type": (enum["d", "ud", "ms"]),
+        "x": 1.282,
+        "y": -2.368,
+        "theta": 0
+    }]
+    "schedule": json [{
+        "id": (int),
+        "name": (string),
+        "hour": (int),
+        "minute": (int)
+    }]
 }

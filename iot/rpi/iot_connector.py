@@ -41,8 +41,8 @@ class Connector:
 
         self.TOPIC_PREFIX = {
             "sensor_telemetry": f"smartfarm/{self.REGION_ID}/iot/telemetry/sensor/",
-            "device_command": f"smartfarm/{self.REGION_ID}/iot/command/device/",
-            "device_telemetry": f"smartfarm/{self.REGION_ID}/iot/telemetry/device/",
+            "actuator_command": f"smartfarm/{self.REGION_ID}/iot/command/actuator/",
+            "actuator_telemetry": f"smartfarm/{self.REGION_ID}/iot/telemetry/actuator/",
         }
 
         self.bt_sock = self.init_bluetooth_socket()
@@ -120,34 +120,33 @@ class Connector:
             payload = msg_packer(time=time.time(), value=value[0])
 
         # 디바이스
-        elif device_type == "1":
-            topic = f"{self.TOPIC_PREFIX['device_telemetry']}{device_id}"
+        # elif device_type == "1":
+        #     topic = f"{self.TOPIC_PREFIX['actuator_telemetry']}{device_id}"
 
-            payload = msg_packer(time=time.time(), state=value[0])
+        #     payload = msg_packer(time=time.time(), state=value[0])
 
         if payload:
             self.client.publish(topic, payload, 1, True)
 
     def on_connect(self, client, userdata, flags, reason_code, properties):
         if reason_code == 0:
-            client.subscribe(self.TOPIC_PREFIX["device_command"] + "#")
+            client.subscribe(self.TOPIC_PREFIX["actuator_command"] + "#")
 
     def on_message(self, client, userdata, msg):
         topic = msg.topic
-        payload = json.loads(msg.payload.decode("utf-8"))
+        payload = msg.payload.decode("utf-8")
 
-        device_id = topic.split("/")[-1]
-        command = ""
-        if payload["on"]:
-            if device_id == "0":
-                command = "lighton"
-        else:
-            if device_id == "0":
-                command = "lightoff"
+        actuator_id = topic.split("/")[-1]
 
         try:
-            if command and self.bt_sock:
-                self.bt_sock.send(command.encode("utf-8"))
+            [float(value) for value in payload.split("+")]
+        except:
+            print(f"유효하지 않은 형식: {payload}")
+
+        try:
+            if payload and self.bt_sock:
+                msg = f"{actuator_id}+1+{payload}".encode("utf-8")
+                self.bt_sock.send(msg)
         except Exception as e:
             print(f"블루투스 데이터 전송 실패: {e}")
 
