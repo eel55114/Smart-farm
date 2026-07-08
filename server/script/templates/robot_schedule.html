@@ -2,7 +2,6 @@
 {% block title %}로봇 일정 계획{% endblock %}
 {% block content %}
 <style>
-    /* ── 전체 레이아웃 ─────────────────────────────────────────── */
     .schedule-page {
         display: flex;
         flex-direction: column;
@@ -27,24 +26,11 @@
         }
     }
 
-    /* ── 폰트 크기 일관성 보정 ──────────────────────────────────── */
-    .small, small, .text-muted.small {
-        font-size: 0.875rem !important;
-    }
-    .form-label.small {
-        font-size: 0.875rem !important;
-    }
-    .form-check-label.small {
-        font-size: 0.875rem !important;
-    }
-
-    /* ── 편집 모드 윤곽선 ───────────────────────────────────────── */
     .map-editor.edit-mode .map-canvas-pane {
         outline: 2px solid #0d6efd;
         outline-offset: -2px;
     }
 
-    /* ── 스케일바 ──────────────────────────────────────────────── */
     #map-scale-bar {
         position: absolute;
         bottom: 12px; right: 12px;
@@ -62,7 +48,6 @@
         height: 5px; width: 50px; margin: 0 auto;
     }
 
-    /* ── 노드 카드 ─────────────────────────────────────────────── */
     .node-card {
         display: flex;
         align-items: center;
@@ -126,50 +111,52 @@
 
 <div class="schedule-page">
 
-    <!-- 지도 선택 및 제어 메뉴바 (상단 독립 카드) -->
-    <div class="content-card mb-4 py-3">
-        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
-            <!-- 지도 선택자 -->
-            <div class="d-flex align-items-center gap-2">
-                <label for="map-select" class="form-label mb-0 fw-semibold text-secondary text-nowrap" style="font-size: 0.875rem;">지도 선택</label>
-                <select id="map-select" class="form-select form-select-sm" style="min-width: 180px;" onchange="onMapSelectChange(this.value)">
-                    <option value="">-- 지도를 선택하세요 --</option>
-                    {% for name in map_names %}
-                    <option value="{{ name }}"
-                        {% if current_robot_data and current_robot_data.map == name %}selected{% endif %}>
-                        {{ name }}
-                    </option>
-                    {% endfor %}
-                </select>
-                <span class="text-muted small text-nowrap">(총 {{ map_names | length }}개)</span>
-            </div>
+    <!-- ── 상단: 지도 선택 및 제어 툴바 ── -->
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3 pb-3 border-bottom">
 
-            <!-- 제어 메뉴바 -->
-            <div class="d-flex align-items-center gap-2 flex-wrap">
-                <button id="btn-set-current-map" class="btn btn-primary btn-sm fw-bold px-3 py-2 shadow-sm border-0"
-                        onclick="setCurrentMap()" disabled>
-                    <span id="btn-set-map-label">현재 지도로 설정</span>
-                </button>
-                <div class="vr mx-1"></div>
-                <button id="btn-edit-map" class="btn btn-secondary btn-sm fw-bold px-3 py-2 shadow-sm border-0"
-                        onclick="toggleEditMode()">편집</button>
-                <button id="btn-clone-map" class="btn btn-secondary btn-sm fw-bold px-3 py-2 shadow-sm border-0" onclick="cloneMap()" disabled>복제</button>
-                <button id="btn-rename-map" class="btn btn-secondary btn-sm fw-bold px-3 py-2 shadow-sm border-0" onclick="renameMap()" disabled>이름 변경</button>
-                <div class="ms-auto ms-sm-0"></div>
-                <button id="btn-delete-map" class="btn btn-outline-danger btn-sm fw-bold px-3 py-2 border-0" onclick="deleteMap()" disabled>삭제</button>
-            </div>
+        <!-- 지도 선택자 -->
+        <div class="d-flex align-items-center gap-2 flex-nowrap">
+            <label for="map-select" class="form-label mb-0 fw-semibold text-secondary small text-nowrap">지도 선택</label>
+            <select id="map-select" class="form-select form-select-sm" style="min-width: 180px;" onchange="onMapSelectChange(this.value)">
+                <option value="">-- 지도를 선택하세요 --</option>
+                {% for name in map_names %}
+                <option value="{{ name }}"
+                    {% if current_robot_data and current_robot_data.map == name %}selected{% endif %}>
+                    {{ name }}
+                </option>
+                {% endfor %}
+            </select>
+            <span class="capsule-badge text-nowrap">총 {{ map_names | length }}개</span>
         </div>
+
+        <!-- 제어 버튼 그룹 -->
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <button id="btn-set-current-map" class="btn btn-primary btn-sm fw-bold px-3 py-2 shadow-sm border-0"
+                    onclick="setCurrentMap()" disabled>
+                <span id="btn-set-map-label">현재 지도로 설정</span>
+            </button>
+            <div class="vr mx-1"></div>
+            <button id="btn-edit-map" class="btn btn-secondary btn-sm fw-bold px-3 py-2 shadow-sm border-0"
+                    onclick="toggleEditMode()">편집</button>
+            <button id="btn-clone-map" class="btn btn-secondary btn-sm fw-bold px-3 py-2 shadow-sm border-0" onclick="cloneMap()" disabled>복제</button>
+            <button id="btn-rename-map" class="btn btn-secondary btn-sm fw-bold px-3 py-2 shadow-sm border-0" onclick="renameMap()" disabled>이름 변경</button>
+            <div class="vr mx-1"></div>
+            <button id="btn-delete-map" class="btn btn-outline-danger btn-sm fw-bold px-3 py-2" onclick="deleteMap()" disabled>삭제</button>
+        </div>
+
     </div>
 
-    <!-- 편집기 (지도 창 & 조작 창 분리) -->
+    <!-- ── 하단: 지도 화면 및 조작 편집기 ── -->
     <div class="row map-editor-row map-editor" id="map-editor">
 
         <!-- 지도 캔버스 창 (좌) -->
         <div class="col-lg-8 mb-4 map-canvas-col d-flex flex-column h-100">
-            <div class="content-card flex-grow-1 p-0 bg-dark position-relative overflow-hidden map-canvas-pane" id="map-canvas-pane" style="border: 1px solid #dee2e6;">
-                <span class="position-absolute bg-primary text-white fw-bold px-3 py-1 rounded-pill edit-mode-badge" style="top: 10px; left: 10px; z-index: 10; display: none; font-size: 0.875rem;">편집 모드</span>
+            <div class="content-card flex-grow-1 p-0 bg-dark position-relative overflow-hidden map-canvas-pane" id="map-canvas-pane">
+                <span class="position-absolute bg-primary text-white fw-bold px-3 py-1 rounded-pill edit-mode-badge"
+                      style="top: 10px; left: 10px; z-index: 10; display: none; font-size: 0.875rem;">편집 모드</span>
                 <canvas id="map-canvas" style="display: block; width: 100%; height: 100%;"></canvas>
-                <div class="position-absolute top-0 start-0 w-100 h-100 align-items-center justify-content-center text-secondary pe-none map-placeholder" id="map-placeholder" style="z-index: 1; font-size: 0.875rem; display: flex;">
+                <div class="position-absolute top-0 start-0 w-100 h-100 align-items-center justify-content-center text-secondary pe-none map-placeholder"
+                     id="map-placeholder" style="z-index: 1; font-size: 0.875rem; display: none;">
                     <p class="mb-0">지도를 선택하면 여기에 표시됩니다.</p>
                 </div>
                 <div id="map-scale-bar" class="d-none">
@@ -181,15 +168,18 @@
 
         <!-- 조작 창 (우) -->
         <div class="col-lg-4 mb-4 map-control-col d-flex flex-column h-100">
-            <div class="content-card flex-grow-1 p-0 bg-white d-flex flex-column overflow-hidden map-control-pane" style="border: 1px solid #dee2e6;">
+            <div class="content-card flex-grow-1 p-0 d-flex flex-column overflow-hidden map-control-pane">
 
                 <!-- ── 계획 조회 창 ── -->
                 <div id="pane-plan" style="display:flex; flex-direction:column; flex:1; overflow:hidden; min-height:0;">
 
-                    <div class="px-3 py-2 fw-bold text-secondary text-uppercase border-bottom bg-light flex-shrink-0 pane-header" style="font-size: 0.875rem; letter-spacing: 0.05em;">계획 조회</div>
+                    <!-- 패널 헤더 -->
+                    <div class="px-3 pt-3 pb-2 flex-shrink-0">
+                        <h4 class="mb-0 text-primary border-bottom pb-2">계획 조회</h4>
+                    </div>
 
                     <!-- 계획 선택자 (고정 상단) -->
-                    <div id="plan-selector" class="d-flex align-items-center gap-1 px-3 py-2 border-bottom bg-white flex-shrink-0">
+                    <div id="plan-selector" class="d-flex align-items-center gap-1 px-3 py-2 border-bottom flex-shrink-0">
                         <select id="plan-dropdown" class="form-select form-select-sm"></select>
                         <button id="btn-add-plan"
                                 class="btn btn-secondary btn-sm fw-bold px-2 py-1 shadow-sm border-0"
@@ -200,18 +190,18 @@
                     </div>
 
                     <!-- 계획 이름 입력 박스 (고정 상단) -->
-                    <div class="px-2 py-2 border-bottom bg-white flex-shrink-0">
+                    <div class="px-3 py-2 border-bottom flex-shrink-0">
                         <input id="plan-name-input" type="text" class="form-control form-control-sm"
                                placeholder="계획 이름" disabled>
                     </div>
 
-                    <!-- 스케줄 목록 (스크롤 가능, 최대 높이 존재) -->
-                    <div id="schedule-selector" class="border-bottom bg-white p-2 flex-shrink-0" style="max-height: 180px; overflow-y: auto; display: none;">
+                    <!-- 스케줄 목록 (스크롤 가능) -->
+                    <div id="schedule-selector" class="border-bottom p-2 flex-shrink-0" style="max-height: 180px; overflow-y: auto; display: none;">
                         <div id="schedule-list-container" class="d-flex flex-column gap-1 mb-1"></div>
                         <button id="btn-add-schedule" class="btn btn-outline-primary btn-sm w-100" style="font-size: 0.825rem;">+ 일정 추가</button>
                     </div>
 
-                    <!-- 노드 선택자 (스크롤 가능, 최대 높이 존재) -->
+                    <!-- 노드 선택자 (스크롤 가능) -->
                     <div id="node-selector" class="flex-grow-1 overflow-auto p-2" style="max-height: 380px; min-height: 0;">
                         <div id="node-list-container"></div>
                         <button id="btn-add-node"
@@ -236,9 +226,14 @@
 
                 <!-- ── 지도 편집 창 ── -->
                 <div id="pane-edit" style="display:none; flex-direction:column; flex:1; overflow:hidden; min-height:0;">
-                    <div class="px-3 py-2 fw-bold text-secondary text-uppercase border-bottom bg-light flex-shrink-0 pane-header" style="font-size: 0.875rem; letter-spacing: 0.05em;">지도 편집</div>
+
+                    <!-- 패널 헤더 -->
+                    <div class="px-3 pt-3 pb-2 flex-shrink-0">
+                        <h4 class="mb-0 text-primary border-bottom pb-2">지도 편집</h4>
+                    </div>
+
                     <div class="p-3 d-flex flex-column gap-4 overflow-auto" style="flex:1; min-height:0;">
-                        
+
                         <!-- 1. 실행 관리 -->
                         <div>
                             <label class="form-label fw-bold text-secondary small mb-2">실행 관리</label>
@@ -302,16 +297,16 @@
                     </div>
 
                     <!-- 6. [최하단 고정] 저장 메뉴 -->
-                    <div class="gap-2 p-2 border-top bg-light flex-shrink-0 d-flex">
+                    <div class="d-flex gap-2 p-2 border-top bg-light flex-shrink-0">
                         <button id="btn-edit-cancel" class="btn btn-outline-secondary btn-sm fw-bold flex-fill">취소</button>
                         <button id="btn-edit-save" class="btn btn-primary btn-sm fw-bold flex-fill border-0 shadow-sm" disabled>저장</button>
                     </div>
+
                 </div>
 
             </div>
         </div>
     </div>
-</div>
 </div>
 
 <!-- 확인 모달 -->
@@ -319,7 +314,7 @@
     <div class="modal-dialog modal-sm modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header py-2">
-                <h6 class="modal-title" id="confirm-modal-title">확인</h6>
+                <h6 class="modal-title text-primary" id="confirm-modal-title">확인</h6>
                 <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body small" id="confirm-modal-body"></div>
@@ -338,7 +333,7 @@
     <div class="modal-dialog modal-sm modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header py-2">
-                <h6 class="modal-title">지도 이름 변경</h6>
+                <h6 class="modal-title text-primary">지도 이름 변경</h6>
                 <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -360,7 +355,7 @@
     <div class="modal-dialog modal-sm modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header py-2">
-                <h6 class="modal-title">계획 실행</h6>
+                <h6 class="modal-title text-primary">계획 실행</h6>
                 <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body small">
