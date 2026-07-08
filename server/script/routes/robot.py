@@ -332,15 +332,20 @@ def robot_set_map():
 
         connector = current_app.config.get("MQTT_CONNECTOR")
         if connector:
-            # 1. set_map 발송
+            # pgm 바이트와 yaml 문자열의 sha256 해시 계산 (ros_connector 검증 준수)
+            import hashlib
+            img_hash = hashlib.sha256(pgm_bytes).hexdigest()
+            inform_hash = hashlib.sha256(yaml_str.encode("utf-8")).hexdigest()
+
+            # 1. set_map 발송 (스펙 준수: sha256 해시만 송신)
             topic = f"smartfarm/{region_id}/robot/command/{robot_id}/set_map"
             payload = {
                 "name": map_name,
-                "img": base64.b64encode(pgm_bytes).decode("utf-8"),
-                "inform": yaml_str,
+                "img_hash": img_hash,
+                "inform_hash": inform_hash,
             }
             connector.publish(topic, payload)
-            print(f"[Set Map] Robot {robot_id}: '{map_name}' → MQTT {topic}")
+            print(f"[Set Map] Robot {robot_id}: '{map_name}' (SHA256 hashes: {img_hash}, {inform_hash}) → MQTT {topic}")
 
             # 2. set_schedule 발송
             plan_path = map_dir / f"{map_name}_plan.json"
