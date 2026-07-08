@@ -1,0 +1,243 @@
+{% set act_icon_map = {
+    1: "mode_fan",
+    2: "wb_sunny",
+    3: "water_pump"
+} %}
+
+<!-- align-items-start 클래스를 적용하여 같은 행의 카드가 늘어나도 옆 카드는 같이 길어지지 않고 상단 정렬되도록 구성 -->
+<div class="row row-cols-2 row-cols-md-3 g-2 mb-3 align-items-start">
+    {% if not actuators %}
+    <div class="col-12">
+        <div class="card border-secondary">
+            <div class="card-body p-3 text-center text-secondary small">
+                등록된 액추에이터가 없습니다.
+            </div>
+        </div>
+    </div>
+    {% else %}
+    {% for item in actuators %}
+    <div class="col">
+        <!-- h-100 제거: 내용물 크기에 맞게만 카드가 형성되도록 설정 -->
+        <div class="card border-success">
+            <!-- 표시부 (클릭 시 토글) -->
+            <div class="card-body p-3 cursor-pointer" 
+                 id="act-card-{{ item.id }}" 
+                 style="cursor: pointer;"
+                 onclick="toggleActuatorControl({{ item.id }})">
+                <div class="mb-2 d-flex gap-1 flex-wrap">
+                    <span class="capsule-badge"># {{ item.id }}</span>
+                    <span class="capsule-badge">{{ item.region_name }}</span>
+                </div>
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <div class="d-flex align-items-center">
+                        {% set icon = act_icon_map.get(item.type_id, "help") %}
+                        <span class="material-symbols-outlined me-2 actuator-icon-{{ icon }}" style="font-variation-settings: 'FILL' 1;">
+                            {{ icon }}
+                        </span>
+                        <h6 class="card-title text-dark fw-bold mb-0 small">{{ item.display_name }}</h6>
+                    </div>
+                </div>
+                <!-- 현재 임계값 요약 표시 -->
+                <div class="d-flex flex-wrap gap-1 mt-1" id="act-summary-{{ item.id }}">
+                    {% for t in item.thresholds %}
+                    <span class="badge bg-secondary rounded-pill small" style="font-size: 0.75rem;" id="summary-badge-{{ item.id }}-{{ t.sensor_type_id }}">
+                        {{ t.sensor_type_name }}: {{ t.threshold_value|int }}{{ t.unit }}
+                    </span>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- 조작부 (카드 내부 최하단에 위치하며 겹침 방지) -->
+            <div class="card-body p-3 pt-0 border-top bg-light d-none actuator-control-panel" 
+                 id="act-control-{{ item.id }}">
+                {% if not item.thresholds %}
+                <div class="text-center text-muted small py-2">
+                    설정 가능한 센서 임계값이 없습니다.
+                </div>
+                {% else %}
+                <!-- 슬라이더들 -->
+                <div class="py-2">
+                    {% for t in item.thresholds %}
+                    <div class="mb-2">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="small fw-bold text-secondary" style="font-size: 0.75rem;">{{ t.sensor_type_name }} 동작값</span>
+                            <span class="small fw-bold text-primary" style="font-size: 0.75rem;" id="val-display-{{ item.id }}-{{ t.sensor_type_id }}">
+                                {{ t.threshold_value|int }}{{ t.unit }}
+                            </span>
+                        </div>
+                        <input type="range" 
+                               class="form-range actuator-slider" 
+                               id="slider-{{ item.id }}-{{ t.sensor_type_id }}"
+                               min="{{ t.min_val }}" 
+                               max="{{ t.max_val }}" 
+                               step="1"
+                               value="{{ t.threshold_value|int }}"
+                               data-original-val="{{ t.threshold_value|int }}"
+                               data-unit="{{ t.unit }}"
+                               data-type-id="{{ t.sensor_type_id }}"
+                               oninput="onSliderInput({{ item.id }}, {{ t.sensor_type_id }}, this.value)">
+                    </div>
+                    {% endfor %}
+                </div>
+                <!-- 저장 및 취소 버튼 -->
+                <div class="d-flex justify-content-end gap-1 pt-2 border-top">
+                    <button type="button" 
+                            class="btn btn-outline-secondary btn-xs py-1 px-2" 
+                            style="font-size: 0.75rem;"
+                            id="btn-cancel-{{ item.id }}" 
+                            disabled 
+                            onclick="cancelActuatorControl({{ item.id }})">
+                        취소
+                    </button>
+                    <button type="button" 
+                            class="btn btn-success btn-xs py-1 px-2 border-0 shadow-sm text-white" 
+                            style="font-size: 0.75rem;"
+                            id="btn-save-{{ item.id }}" 
+                            disabled 
+                            onclick="saveActuatorControl({{ item.id }}, '{{ item.display_name }}')">
+                        저장
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+</div>
+
+<script>
+    // 아코디언 토글 기능
+    function toggleActuatorControl(actuatorId) {
+        const targetPanel = document.getElementById(`act-control-${actuatorId}`);
+        const allPanels = document.querySelectorAll('.actuator-control-panel');
+        
+        allPanels.forEach(panel => {
+            const panelId = parseInt(panel.id.replace('act-control-', ''));
+            if (panelId !== actuatorId && !panel.classList.contains('d-none')) {
+                revertSliders(panelId);
+                panel.classList.add('d-none');
+            }
+        });
+
+        if (targetPanel.classList.contains('d-none')) {
+            targetPanel.classList.remove('d-none');
+        } else {
+            revertSliders(actuatorId);
+            targetPanel.classList.add('d-none');
+        }
+    }
+
+    // 슬라이더 변경 시 활성화 처리
+    function onSliderInput(actuatorId, sensorTypeId, value) {
+        const display = document.getElementById(`val-display-${actuatorId}-${sensorTypeId}`);
+        const slider = document.getElementById(`slider-${actuatorId}-${sensorTypeId}`);
+        const unit = slider.getAttribute('data-unit') || '';
+        // 정수형으로 확실히 변환하여 노출
+        display.innerText = `${parseInt(value, 10)}${unit}`;
+
+        checkDirtyState(actuatorId);
+    }
+
+    // 변경사항 감지 후 버튼 활성화/비활성화 처리
+    function checkDirtyState(actuatorId) {
+        const sliders = document.querySelectorAll(`#act-control-${actuatorId} .actuator-slider`);
+        let isDirty = false;
+
+        sliders.forEach(slider => {
+            const currentVal = parseFloat(slider.value);
+            const originalVal = parseFloat(slider.getAttribute('data-original-val'));
+            if (Math.abs(currentVal - originalVal) > 0.001) {
+                isDirty = true;
+            }
+        });
+
+        const btnCancel = document.getElementById(`btn-cancel-${actuatorId}`);
+        const btnSave = document.getElementById(`btn-save-${actuatorId}`);
+        
+        if (btnCancel && btnSave) {
+            btnCancel.disabled = !isDirty;
+            btnSave.disabled = !isDirty;
+        }
+    }
+
+    // 슬라이더 복구 함수
+    function revertSliders(actuatorId) {
+        const sliders = document.querySelectorAll(`#act-control-${actuatorId} .actuator-slider`);
+        sliders.forEach(slider => {
+            const originalVal = slider.getAttribute('data-original-val');
+            slider.value = originalVal;
+            const sensorTypeId = slider.getAttribute('data-type-id');
+            const unit = slider.getAttribute('data-unit') || '';
+            const display = document.getElementById(`val-display-${actuatorId}-${sensorTypeId}`);
+            if (display) {
+                display.innerText = `${originalVal}${unit}`;
+            }
+        });
+        checkDirtyState(actuatorId);
+    }
+
+    // 취소 클릭 핸들러
+    function cancelActuatorControl(actuatorId) {
+        revertSliders(actuatorId);
+        const targetPanel = document.getElementById(`act-control-${actuatorId}`);
+        if (targetPanel) {
+            targetPanel.classList.add('d-none');
+        }
+    }
+
+    // 저장 클릭 핸들러 (MQTT 발송 및 DB 업데이트)
+    function saveActuatorControl(actuatorId, displayName) {
+        const sliders = document.querySelectorAll(`#act-control-${actuatorId} .actuator-slider`);
+        const sliderList = Array.from(sliders);
+        sliderList.sort((a, b) => {
+            const typeA = parseInt(a.getAttribute('data-type-id'));
+            const typeB = parseInt(b.getAttribute('data-type-id'));
+            return typeA - typeB;
+        });
+
+        const vals = sliderList.map(s => s.value);
+        const payloadStr = vals.join('+');
+
+        fetch('/api/save_actuator_threshold', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                actuator_id: actuatorId,
+                threshold_value: payloadStr
+            })
+        })
+        .then(response => {
+            if (response.ok) {
+                sliderList.forEach(slider => {
+                    const newVal = slider.value;
+                    slider.setAttribute('data-original-val', newVal);
+                    
+                    const sensorTypeId = slider.getAttribute('data-type-id');
+                    const unit = slider.getAttribute('data-unit') || '';
+                    const summaryBadge = document.getElementById(`summary-badge-${actuatorId}-${sensorTypeId}`);
+                    if (summaryBadge) {
+                        const typeName = summaryBadge.innerText.split(':')[0];
+                        summaryBadge.innerText = `${typeName}: ${newVal}${unit}`;
+                    }
+                });
+                checkDirtyState(actuatorId);
+                
+                const targetPanel = document.getElementById(`act-control-${actuatorId}`);
+                if (targetPanel) {
+                    targetPanel.classList.add('d-none');
+                }
+
+                alert(`${displayName}의 동작값이 변경되었습니다.`);
+            } else {
+                alert('설정 저장 중 오류가 발생했습니다.');
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            alert('네트워크 오류가 발생했습니다.');
+        });
+    }
+</script>

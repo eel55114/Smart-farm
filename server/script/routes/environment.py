@@ -2,9 +2,62 @@ import json
 from datetime import datetime, timedelta
 
 from db_instance import db
-from flask import Blueprint, render_template, request
+from flask import Blueprint, current_app, render_template, request
 
 environment_bp = Blueprint("environment", __name__)
+
+
+@environment_bp.route("/api/save_actuator_threshold", methods=["POST"])
+def save_actuator_threshold():
+    """웹 대시보드에서 수정된 임계값을 저장하고 MQTT 명령을 발송합니다."""
+    body = request.get_json() or {}
+    actuator_id = body.get("actuator_id")
+    threshold_str = body.get("threshold_value")  # 예: "20+15"
+
+    if not actuator_id or threshold_str is None:
+        return "Invalid parameters", 400
+
+    # 1. 액추에이터의 region_id 조회
+    actuators, err = db.get_current_actuator(actuator_ids=[actuator_id])
+    if err or not actuators:
+        return "Actuator not found", 404
+    region_id = actuators[0].region_id or 1
+
+    # 2. DB 및 MQTT용 raw 값들 계산
+    thresholds_list, err2 = db.get_actuator_thresholds(actuator_ids=[actuator_id])
+    mqtt_threshold_str = threshold_str  # 기본값
+    if not err2 and thresholds_list:
+        thresholds_list.sort(key=lambda x: x.sensor_type_id)
+        values = str(threshold_str).split("+")
+        
+        save_list = []
+        mqtt_vals = []
+        for idx, t in enumerate(thresholds_list):
+            if idx < len(values):
+                try:
+                    val = float(values[idx])
+                    # 습도류(1, 3, 5)는 UI(0~100) 값을 원본 소수(0~1)로 변환
+                    if t.sensor_type_id in [1, 3, 5]:
+                        val = val / 100.0
+                    t.threshold_value = val
+                    save_list.append(t)
+                    # 소수점 둘째자리까지 정밀하게 원본 MQTT 데이터로 설정
+                    mqtt_vals.append(str(round(val, 2)))
+                except ValueError:
+                    pass
+        if save_list:
+            db.save_actuator_thresholds(save_list)
+        if mqtt_vals:
+            mqtt_threshold_str = "+".join(mqtt_vals)
+
+    # 3. MQTT 전송 (스펙: smartfarm/{region_id}/iot/command/actuator/{actuator_id})
+    connector = current_app.config.get("MQTT_CONNECTOR")
+    if connector:
+        topic = f"smartfarm/{region_id}/iot/command/actuator/{actuator_id}"
+        connector.publish(topic, {"data": str(mqtt_threshold_str)})
+        print(f"[Actuator Threshold Command] Published {mqtt_threshold_str} to {topic}")
+
+    return {"status": "success"}, 200
 
 
 @environment_bp.route("/api/control_actuator")
@@ -36,9 +89,9 @@ def get_current_sensors():
     data = []
     for i in sensors:
         is_danger = False
-        if i.type_id in [1, 2, 5]:  # 조도, 습도, 토양습도
+        if i.type_id in [1, 3, 5]:  # 조도, 습도, 토양습도
             value = f"{min(round(i.value * 100, 2), 100)}%"
-        elif i.type_id == 3:  # 온도
+        elif i.type_id == 2:  # 온도
             value = f"{i.value}°C"
         elif i.type_id == 4:  # 화염
             value = f"{'화재' if i.value > 0.5 else '없음'}"
@@ -176,9 +229,67 @@ def environment():
                 ],
             }
 
+    # 액추에이터 정보 쿼리 및 가공
+    actuators = []
+    db_actuators, err1 = db.get_current_actuator(regions=regions_filter)
+    if err1:
+        db_error = True
+    else:
+        actuator_ids = [a.id for a in db_actuators]
+        thresholds = []
+        if actuator_ids:
+            db_thresholds, err2 = db.get_actuator_thresholds(actuator_ids=actuator_ids)
+            if err2:
+                db_error = True
+            else:
+                thresholds = db_thresholds
+
+        SENSOR_LIMITS = {
+            1: {"min": 0, "max": 100, "unit": "%"},  # 조도
+            2: {"min": 0, "max": 50, "unit": "°C"},  # 온도
+            3: {"min": 0, "max": 100, "unit": "%"},  # 습도
+            4: {"min": 0, "max": 1, "unit": ""},  # 화염
+            5: {"min": 0, "max": 100, "unit": "%"},  # 토양습도
+        }
+
+        # actuator_id 별로 thresholds 그룹화
+        thresh_map = {}
+        for t in thresholds:
+            limits = SENSOR_LIMITS.get(
+                t.sensor_type_id, {"min": 0, "max": 100, "unit": ""}
+            )
+            t.min_val = limits["min"]
+            t.max_val = limits["max"]
+            t.unit = limits["unit"]
+            # 습도류(1, 3, 5)는 UI 표시를 위해 100을 곱하고 정수로 반올림
+            if t.sensor_type_id in [1, 3, 5]:
+                t.threshold_value = int(round(t.threshold_value * 100))
+            else:
+                t.threshold_value = int(round(t.threshold_value))
+            thresh_map.setdefault(t.actuator_id, []).append(t)
+
+        for a in db_actuators:
+            display_name = a.name if (a.name and a.name.strip()) else a.type_name
+            t_list = thresh_map.get(a.id, [])
+            t_list.sort(key=lambda x: x.sensor_type_id)
+
+            actuators.append(
+                {
+                    "id": a.id,
+                    "type_id": a.type_id,
+                    "type_name": a.type_name,
+                    "region_id": a.region_id,
+                    "region_name": a.region_name,
+                    "name": a.name,
+                    "display_name": display_name,
+                    "thresholds": t_list,
+                }
+            )
+
     return render_template(
         "environment.html",
         days=days,
         charts_data=json.dumps(charts_data),
         db_error=db_error,
+        actuators=actuators,
     )

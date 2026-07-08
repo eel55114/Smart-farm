@@ -12,16 +12,27 @@
 </div>
 {% endif %}
 <div class="row">
-    <!-- 좌측 (센서 상태) -->
+    <!-- 좌측 (센서 상태 & 액추에이터 상태) -->
     <div class="col-md-6 mb-4">
-        <div class="content-card h-100">
+        <!-- 1사분면: 센서 상태 -->
+        <div class="content-card mb-4" style="min-height: 380px;">
             <h4 class="mb-3 text-primary border-bottom pb-2">센서 상태</h4>
-            <div class="scrollable-container overflow-y-auto overflow-x-hidden pe-2" style="max-height: 400px;">
+            <div class="scrollable-container overflow-y-auto overflow-x-hidden pe-2" style="max-height: 320px;">
                 <div id="sensor-container"
                     hx-get="/api/current_sensors{% if current_region %}?region={{ current_region }}{% endif %}" 
                     hx-trigger="load, every 1s" 
                     hx-swap="innerHTML">
                     {% include '_sensor_state.html' %}
+                </div>
+            </div>
+        </div>
+
+        <!-- 3사분면: 액추에이터 상태 -->
+        <div class="content-card" style="min-height: 380px;">
+            <h4 class="mb-3 text-primary border-bottom pb-2">액추에이터 상태</h4>
+            <div class="scrollable-container overflow-y-auto overflow-x-hidden pe-2" style="max-height: 320px;">
+                <div id="actuator-container">
+                    {% include '_actuator_state.html' %}
                 </div>
             </div>
         </div>

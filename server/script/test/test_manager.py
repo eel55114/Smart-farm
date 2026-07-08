@@ -513,20 +513,20 @@ def test_get_active_plant_type(db: DBManager):
 def test_update_actuator(db: DBManager):
     session = db.session_local()
     new_actuator = schema.Actuator(
-        id=1, type_id=1, region_id=1, state="정지", last_signal=datetime.now()
+        id=1, type_id=1, region_id=1, name="환풍기A", last_signal=datetime.now()
     )
     session.add(new_actuator)
     session.commit()
 
-    update_data = [datatype.Actuator(id=1, state="가동")]
+    update_data = [datatype.Actuator(id=1, name="환풍기B")]
     err = db.update_actuator(update_data)
     assert err is None
 
     actuator = session.get(schema.Actuator, 1)
     assert actuator is not None
-    assert actuator.state == "가동"
+    assert actuator.name == "환풍기B"
 
-    invalid_data = [datatype.Actuator(id=9999, state="정지")]
+    invalid_data = [datatype.Actuator(id=9999, name="에러")]
     err_invalid = db.update_actuator(invalid_data)
     assert err_invalid is not None
     assert isinstance(err_invalid, ValueError)
@@ -535,7 +535,7 @@ def test_update_actuator(db: DBManager):
 def test_get_current_actuator(db: DBManager):
     session = db.session_local()
     new_actuator = schema.Actuator(
-        id=2, type_id=1, region_id=1, state="정지", last_signal=datetime.now()
+        id=2, type_id=1, region_id=1, name="조명A", last_signal=datetime.now()
     )
     session.add(new_actuator)
     session.commit()
@@ -544,3 +544,4 @@ def test_get_current_actuator(db: DBManager):
     assert err is None
     assert len(results) == 1
     assert results[0].id == 2
+    assert results[0].name == "조명A"

@@ -221,9 +221,9 @@ def logs_sensors():
 
         # 타입별 포맷 지정
         type_id = sensor.type_id if sensor else None
-        if type_id in [1, 2, 5]:  # 습도, 조도, 토양습도
+        if type_id in [1, 3, 5]:  # 습도, 조도, 토양습도
             fmt = lambda v: f"{round(v * 100, 1)}%"
-        elif type_id == 3:  # 온도
+        elif type_id == 2:  # 온도
             fmt = lambda v: f"{round(v, 1)}°C"
         elif type_id == 4:  # 화염
             fmt = lambda v: "화재" if v > 0.5 else "없음"
