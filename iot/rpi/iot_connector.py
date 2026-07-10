@@ -117,7 +117,7 @@ class Connector:
         if device_type == "0":
             topic = f"{self.TOPIC_PREFIX['sensor_telemetry']}{device_id}"
 
-            payload = msg_packer(time=time.time(), value=value[0])
+            payload = msg_packer(time=time.time(), value=value[0].strip())
 
         # 디바이스
         # elif device_type == "1":

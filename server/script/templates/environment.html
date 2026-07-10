@@ -11,13 +11,13 @@
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
-<div class="row">
+<div class="row g-4" style="height: calc(100vh - 10rem); min-height: 600px;">
     <!-- 좌측 (센서 상태 & 액추에이터 상태) -->
-    <div class="col-md-6 mb-4">
-        <!-- 1사분면: 센서 상태 -->
-        <div class="content-card mb-4" style="min-height: 380px;">
-            <h4 class="mb-3 text-primary border-bottom pb-2">센서 상태</h4>
-            <div class="scrollable-container overflow-y-auto overflow-x-hidden pe-2" style="max-height: 320px;">
+    <div class="col-md-6 d-flex flex-column h-100 gap-4" style="min-height: 0;">
+        <!-- 센서 상태 -->
+        <div class="content-card d-flex flex-column" style="flex: 1 1 0%; min-height: 0;">
+            <h4 class="mb-3 text-primary border-bottom pb-2 flex-shrink-0">센서 상태</h4>
+            <div class="overflow-y-auto overflow-x-hidden pe-2 flex-grow-1" style="min-height: 0;">
                 <div id="sensor-container"
                     hx-get="/api/current_sensors{% if current_region %}?region={{ current_region }}{% endif %}" 
                     hx-trigger="load, every 1s" 
@@ -27,10 +27,10 @@
             </div>
         </div>
 
-        <!-- 3사분면: 액추에이터 상태 -->
-        <div class="content-card" style="min-height: 380px;">
-            <h4 class="mb-3 text-primary border-bottom pb-2">액추에이터 상태</h4>
-            <div class="scrollable-container overflow-y-auto overflow-x-hidden pe-2" style="max-height: 320px;">
+        <!-- 액추에이터 상태 -->
+        <div class="content-card d-flex flex-column" style="flex: 1 1 0%; min-height: 0;">
+            <h4 class="mb-3 text-primary border-bottom pb-2 flex-shrink-0">액추에이터 상태</h4>
+            <div class="overflow-y-auto overflow-x-hidden pe-2 flex-grow-1" style="min-height: 0;">
                 <div id="actuator-container">
                     {% include '_actuator_state.html' %}
                 </div>
@@ -39,8 +39,8 @@
     </div>
 
     <!-- 우측 (센서 그래프) -->
-    <div class="col-md-6 mb-4">
-        <div class="content-card h-100">
+    <div class="col-md-6 d-flex flex-column h-100" style="min-height: 0;">
+        <div class="content-card d-flex flex-column h-100" style="min-height: 0;">
             {{ chart_viewer.render_charts('센서 그래프', request.endpoint, days, 1, charts_data) }}
         </div>
     </div>

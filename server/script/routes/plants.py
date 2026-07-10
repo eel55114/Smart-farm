@@ -16,6 +16,8 @@ def plants():
     types, err = db.get_active_plant_type()
     if err is not None:
         types = dict()
+    else:
+        types = dict(sorted(types.items()))
 
     # 현재 작물 정보 쿼리
     plants_data, err = db.get_current_plant(regions=regions_filter)

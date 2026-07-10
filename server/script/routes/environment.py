@@ -148,85 +148,82 @@ def environment():
             hour=0, minute=0, second=0, microsecond=0
         )
 
-    # 2. X축 라벨 생성
-    labels = []
-    curr = start_date
-    while curr.date() <= end_date.date():
-        labels.append(curr.strftime("%y%m%d"))
-        curr += timedelta(days=1)
-
     graph_records, _, err = db.get_sensor_history(
         start_date=start_date, end_date=end_date, regions=regions_filter
     )
     if err is not None:
         db_error = True
 
+    # 2. X축 라벨 생성 (데이터베이스의 실제 time_bucket 기반으로 상세 시간단위 라벨 생성)
+    labels = []
+    if graph_records:
+        unique_buckets = sorted(list({r.time_bucket for r in graph_records}))
+        labels = [b.strftime("%m%d %H:%M:%S") for b in unique_buckets]
+
     charts_data = {}
     if graph_records:
-        # 센서 종류 파악
+        # 센서 ID → 표시명 매핑 (현재 센서 목록에서 조회)
+        sensor_meta, _ = db.get_current_sensor(regions=regions_filter)
+        sensor_label_map = {
+            s.id: (s.name.strip() if s.name and s.name.strip() else f"{s.type_name} #{s.id}")
+            for s in sensor_meta
+        }
+
+        # 센서별 색상 팔레트 (순환)
+        palette = [
+            ("rgba(13,110,253,1)",   "rgba(13,110,253,0.15)"),   # blue
+            ("rgba(220,53,69,1)",    "rgba(220,53,69,0.15)"),    # red
+            ("rgba(25,135,84,1)",    "rgba(25,135,84,0.15)"),    # green
+            ("rgba(255,193,7,1)",    "rgba(255,193,7,0.15)"),    # yellow
+            ("rgba(111,66,193,1)",   "rgba(111,66,193,0.15)"),   # purple
+            ("rgba(13,202,240,1)",   "rgba(13,202,240,0.15)"),   # cyan
+            ("rgba(253,126,20,1)",   "rgba(253,126,20,0.15)"),   # orange
+            ("rgba(102,16,242,1)",   "rgba(102,16,242,0.15)"),   # indigo
+        ]
+
+        # 타입별로 그룹화
         types = {}
         for r in graph_records:
             types[r.sensor_type] = r.sensor_type_name
 
         for type_id, type_name in types.items():
-            avg_vals = []
-            max_vals = []
-            min_vals = []
-
             type_records = [r for r in graph_records if r.sensor_type == type_id]
-            records_by_date = {}
-            for r in type_records:
-                date_str = r.time_bucket.strftime("%y%m%d")
-                records_by_date.setdefault(date_str, []).append(r)
 
-            for label in labels:
-                if label in records_by_date:
-                    day_recs = records_by_date[label]
-                    avg_vals.append(
-                        round(sum(r.avg for r in day_recs) / len(day_recs), 2)
-                    )
-                    max_vals.append(round(max(r.max for r in day_recs), 2))
-                    min_vals.append(round(min(r.min for r in day_recs), 2))
-                else:
-                    avg_vals.append(None)
-                    max_vals.append(None)
-                    min_vals.append(None)
+            # 해당 타입에 속하는 sensor_id 목록 (순서 고정)
+            sensor_ids = sorted({r.sensor_id for r in type_records})
 
-            avg_fg_color = "rgba(0, 123, 255, 1)"
-            avg_bg_color = "rgba(0, 123, 255, 0.2)"
-            max_fg_color = "rgba(220, 53, 69, 1)"
-            max_bg_color = "rgba(220, 53, 69, 0.2)"
-            min_fg_color = "rgba(40, 167, 69, 1)"
-            min_bg_color = "rgba(40, 167, 69, 0.2)"
+            datasets = []
+            for idx, sid in enumerate(sensor_ids):
+                color_fg, color_bg = palette[idx % len(palette)]
+                sensor_records = [r for r in type_records if r.sensor_id == sid]
+
+                # 상세 시간단위 매핑 (time_bucket 별 매핑)
+                records_by_bucket = {
+                    r.time_bucket.strftime("%m%d %H:%M:%S"): r
+                    for r in sensor_records
+                }
+
+                avg_vals = []
+                for label in labels:
+                    if label in records_by_bucket:
+                        r = records_by_bucket[label]
+                        avg_vals.append(round(r.avg, 2))
+                    else:
+                        avg_vals.append(None)
+
+                sensor_name = sensor_label_map.get(sid, f"#{sid}")
+                datasets.append({
+                    "label": sensor_name,
+                    "data": avg_vals,
+                    "borderColor": color_fg,
+                    "backgroundColor": color_bg,
+                    "spanGaps": False,
+                    "tension": 0.1,
+                })
 
             charts_data[type_name] = {
                 "labels": labels,
-                "datasets": [
-                    {
-                        "label": "최댓값",
-                        "data": max_vals,
-                        "borderColor": max_fg_color,
-                        "backgroundColor": max_bg_color,
-                        "spanGaps": False,
-                        "tension": 0.1,
-                    },
-                    {
-                        "label": "평균값",
-                        "data": avg_vals,
-                        "borderColor": avg_fg_color,
-                        "backgroundColor": avg_bg_color,
-                        "spanGaps": False,
-                        "tension": 0.1,
-                    },
-                    {
-                        "label": "최솟값",
-                        "data": min_vals,
-                        "borderColor": min_fg_color,
-                        "backgroundColor": min_bg_color,
-                        "spanGaps": False,
-                        "tension": 0.1,
-                    },
-                ],
+                "datasets": datasets,
             }
 
     # 액추에이터 정보 쿼리 및 가공
