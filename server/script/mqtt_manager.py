@@ -1,5 +1,6 @@
 import base64
 import json
+import math
 import os
 import pathlib
 import queue
@@ -57,9 +58,15 @@ class Connector:
         topic = msg.topic.split("/")
         payload = json.loads(msg.payload)
         dt = datetime.fromtimestamp(payload["time"]) if "time" in payload else None
-        self.queue.put(
-            datatype.Sensor(id=int(topic[5]), value=payload["value"], last_signal=dt)
-        )
+
+        try:
+            value = float(payload["value"].strip())
+            if not math.isnan(value):
+                data = datatype.Sensor(id=int(topic[5]), value=value, last_signal=dt)
+                print(data)
+                self.queue.put(data)
+        except:
+            pass
 
     def on_device_data(self, client, userdata, msg) -> None:
         topic = msg.topic.split("/")
