@@ -40,6 +40,26 @@ class IntegratedRobotControl(Node):
         self.cli_costmap = self.create_client(SetParameters, '/local_costmap/local_costmap/set_parameters')
         
         # ====================================================================
+        # [신규 추가] JSON 동적 시퀀스 및 웨이포인트 관리 변수
+        # ====================================================================
+        self.sequence_list = []      # JSON에서 파싱한 주행 순서 리스트 (예: [1, 2, 3, 4, 8, 5, 6, 7])
+        self.waypoint_dict = {}      # ID를 Key로 가지는 웨이포인트 딕셔너리 구조
+        self.current_seq_idx = 0     # 현재 sequence_list의 몇 번째 인덱스를 수행 중인지 추적
+        self.current_detected_marker_id = None # 정렬 과정에서 최종 인식된 마커 ID 저장용
+        
+        # ====================================================================
+        # [신규 추가] JSON 스케줄 예약 제어 변수 및 구독자
+        # ====================================================================
+        self.schedule_plans = []          # 수신된 전체 스케줄 플랜 리스트 저장
+        self.last_triggered_time = (None, None) # 동일 시간(시, 분) 중복 실행 방지용
+        
+        # /json_schedule 토픽 구독자 등록
+        self.sub_json_schedule = self.create_subscription(String, 'json_schedule', self.json_schedule_callback, 10)
+        
+        # 10초마다 현재 시간을 확인하여 예약 작업을 감시하는 타이머 생성
+        self.schedule_timer = self.create_timer(10.0, self.check_schedule_timer_callback)        
+        
+        # ====================================================================
         # 1. 자율주행 & ArUco 이미지 처리 설정 (기존)
         # ====================================================================
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_1000)
@@ -82,8 +102,8 @@ class IntegratedRobotControl(Node):
         self.dist_coeffs = None
         self.distortion_k = 0.0006 
         self.offset_bias = 0.17
-        self.tilt_tolerance = 0.1
-        self.x_err_tolerance = 20.0
+        self.tilt_tolerance = 0.08
+        self.x_err_tolerance = 15.0
 
         # Waypoints
         self.waypoints = [
@@ -114,7 +134,7 @@ class IntegratedRobotControl(Node):
 
         # 회전(좌우) 및 직진(앞뒤) 오차 필터링
         self.filtered_error_x = 0.0
-        self.filter_alpha = 0.50  
+        self.filter_alpha = 0.40  
         self.filtered_error_area = 0.0
         self.filter_alpha_area = 0.20  
 
@@ -151,6 +171,7 @@ class IntegratedRobotControl(Node):
         self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_callback, qos_profile_sensor_data)
         self.human_sub = self.create_subscription(HumanPositionArray, '/human_positions', self.human_callback, 1)
         self.info_sub = self.create_subscription(CameraInfo, '/sidecam/camera_info', self.camera_info_callback, 10)
+        self.sub_json_sequence = self.create_subscription(String, 'json_sequence', self.json_sequence_callback, 10)
 
         # 사람 추종 제어용 10Hz 타이머 (모드가 follow일 때만 구동)
         self.control_timer = self.create_timer(0.1, self.follow_timer_callback)
@@ -159,6 +180,77 @@ class IntegratedRobotControl(Node):
         
         threading.Thread(target=self._initial_param_loader, daemon=True).start()
     
+    def json_schedule_callback(self, msg):
+        try:
+            data = json.loads(msg.data)
+            # 수신된 전체 플랜 리스트를 멤버 변수에 저장
+            self.schedule_plans = data
+            self.get_logger().info(f"📅 새 스케줄 데이터 수신 완료! 총 {len(self.schedule_plans)}개의 플랜 관리 시작")
+            
+            # 디버깅용 로그 출력
+            for plan in self.schedule_plans:
+                name = plan.get("name", "무명 플랜")
+                schedules = plan.get("schedule", [])
+                if schedules:
+                    times_str = ", ".join([f"{s['hour']:02d}:{s['minute']:02d}" for s in schedules])
+                    self.get_logger().info(f" └─ [{name}] 예약 시간: {times_str}")
+                else:
+                    self.get_logger().info(f" └─ [{name}] 예약 스케줄 없음 (자동 실행 제외)")
+                    
+        except Exception as e:
+            self.get_logger().error(f"❌ JSON 스케줄 파싱 중 에러 발생: {e}")
+            
+    def check_schedule_timer_callback(self):
+        # 🚨 [신규 추가] 현재 모드가 auto가 아니면 시간이 되어도 스케줄을 완전히 무시함
+        if self.current_mode != "auto":
+            return
+            
+        # 로봇이 이미 무언가(자율주행, 수동 이동, 복귀 등)를 하고 있다면 안전을 위해 스킵
+        if self.is_auto_running or self.is_manual_moving or self.is_returning_home:
+            return
+            
+        # 현재 시스템 시간 가져오기
+        from datetime import datetime
+        now = datetime.now()
+        current_hour = now.hour
+        current_minute = now.minute
+        
+        # 1분 안에 타이머가 여러 번(10초 주기이므로 6번) 돌 때 중복 실행되는 것을 절대 방지
+        if self.last_triggered_time == (current_hour, current_minute):
+            return
+            
+        # 등록된 플랜들을 순회하며 검사
+        for plan in self.schedule_plans:
+            schedules = plan.get("schedule", [])
+            if not schedules: # schedule 리스트가 비어있으면 (예: 장애물 회피) 무시하고 넘어감
+                continue
+                
+            for s in schedules:
+                # 현재 시각과 예약 시각이 일치하는지 확인
+                if s.get("hour") == current_hour and s.get("minute") == current_minute:
+                    self.get_logger().info(f"⏰ [스케줄 알람] '{plan['name']}' 작업 시작 시간 도달! ({current_hour:02d}:{current_minute:02d})")
+                    
+                    # 중복 실행 방지 마킹
+                    self.last_triggered_time = (current_hour, current_minute)
+                    
+                    # 1. 해당 플랜의 시퀀스 및 웨이포인트 데이터를 핵심 동적 변수에 주입
+                    self.sequence_list = plan.get("sequence", [])
+                    waypoints_raw = plan.get("waypoint", [])
+                    self.waypoint_dict = {wp["id"]: wp for wp in waypoints_raw}
+                    self.current_seq_idx = 0
+                    
+                    # 2. 모드를 auto(자율주행)로 강제 변환 후 기존 자율주행 프로세스 구동
+                    self.current_mode = "auto"
+                    self.write_log(f"스케줄 구동: {plan['name']}")
+                    self.set_state("대기")
+                    
+                    self.is_auto_running = True
+                    self.auto_thread = threading.Thread(target=self.run_auto_process)
+                    self.auto_thread.daemon = True
+                    self.auto_thread.start()
+                    
+                    return # 하나의 정해진 시간에는 하나의 플랜만 실행하고 콜백 종료
+            
     def _initial_param_loader(self):
         """Nav2 서버가 완전히 켜질 때까지 기다렸다가 YAML 초기값을 쏴주는 함수"""
         self.get_logger().info("⏳ Nav2 파라미터 서버가 켜질 때까지 대기합니다...")
@@ -172,7 +264,106 @@ class IntegratedRobotControl(Node):
         
         self.get_logger().info("✅ Nav2 서버 준비 완료! 저장된 YAML 파라미터를 강제 주입합니다.")
         self.apply_stored_params("RPP")
-           
+    
+    def json_sequence_callback(self, msg):
+        try:
+            data = json.loads(msg.data)
+            self.sequence_list = data.get("sequence", [])
+            waypoints_raw = data.get("waypoint", [])
+            
+            self.waypoint_dict = {wp["id"]: wp for wp in waypoints_raw}
+            self.current_seq_idx = 0
+            self.get_logger().info(f"✅ 새 시퀀스 수신 완료! 총 {len(self.sequence_list)}개의 목표 지점 순차 주행 대기")
+            
+            # 🚨 [수정] auto 모드이고 대기 중일 때만 즉시 실행
+            if self.current_mode == "auto":
+                if not self.is_auto_running:
+                    self.is_auto_running = True
+                    # (아래 4번에서 함수 이름을 변경합니다)
+                    threading.Thread(target=self._immediate_sequence_process, daemon=True).start()
+                else:
+                    self.get_logger().warn("⚠️ 이미 자율주행 작업이 실행 중입니다. 시퀀스를 무시합니다.")
+            else:
+                self.get_logger().warn("⚠️ 현재 auto 모드가 아닙니다. 시퀀스 명령을 무시합니다.")
+                
+        except Exception as e:
+            self.get_logger().error(f"❌ JSON 시퀀스 파싱 중 에러 발생: {e}")
+    
+    def _immediate_sequence_process(self):
+        """auto 모드에서 수신된 JSON 시퀀스 좌표들로 즉시 이동 (홈 복귀 없음)"""
+        self.set_state("이동")
+        self.write_log("시퀀스 목표 이동 시작")
+
+        for i in range(len(self.sequence_list)):
+            # 🚨 모드가 auto에서 바뀌거나 리모컨 정지(s)가 들어오면 즉시 중단
+            if self.current_mode != "auto" or not self.is_auto_running:
+                break
+                
+            wp_id = self.sequence_list[i]
+            wp = self.waypoint_dict.get(wp_id)
+            if wp is None: continue
+
+            x = wp['x']
+            y = wp['y']
+            wp_type = wp['type']
+            yaw = wp['theta'] if wp_type in ['d', 'ms'] else 0.0
+
+            self.auto_step = "NAV"
+            self.set_state("wp 이동")
+            self.write_log(f"📍 [시퀀스 즉시 실행] {i+1}/{len(self.sequence_list)} 번째 지점 이동 중 (ID: {wp_id})")
+            
+            if not self.send_nav_goal(x, y, yaw):
+                self.get_logger().warn(f"❌ ID {wp_id} 이동 실패 또는 취소됨")
+                break
+                
+            if wp_type == "ud":
+                self.write_log(f"ID {wp_id} (ud) 도착 완료")
+                time.sleep(0.5)
+            elif wp_type == "d":
+                self.write_log(f"ID {wp_id} (d) 방향 정렬 완료")
+                time.sleep(0.5)
+            elif wp_type == "ms":
+                self.auto_step = "ALIGN"
+                self.set_state("마커 정렬")
+                self.write_log(f"🔍 ID {wp_id} (ms) 카메라 기반 마커 정렬 시작")
+                
+                self.align_done = False
+                self.align_state = 1
+                align_start_time = time.time()
+                
+                while rclpy.ok() and not self.align_done:
+                    if self.current_mode != "auto" or not self.is_auto_running: 
+                        break
+                    if time.time() - align_start_time > 30.0:
+                        self.write_log(f"⚠️ ID {wp_id} 정렬 시간 초과 (30s)")
+                        self.stop_robot()
+                        break 
+                    time.sleep(0.1)
+
+                if self.current_mode != "auto" or not self.is_auto_running: 
+                    break
+
+                self.auto_step = "DONE"
+                self.set_state("마커 촬영")
+                
+                detected_id = self.current_detected_marker_id if self.current_detected_marker_id is not None else wp_id
+                self.write_log(f"📸 마커 {detected_id}번 ID 기반 촬영 데이터 전송 시작")
+                
+                for capture_idx in range(10):
+                    if self.current_mode != "auto" or not self.is_auto_running: 
+                        break
+                    self.publish_capture_image(detected_id)
+                    time.sleep(0.3) 
+                
+                self.write_log(f"✅ ID {wp_id} 촬영 완료 및 종료")
+                time.sleep(0.5)
+
+        # 루프를 무사히 다 마쳤거나 끊기지 않았을 때 대기 상태로 전환
+        if self.is_auto_running:
+            self.set_state("대기")
+            self.write_log("모든 시퀀스 완료 및 대기")
+            self.is_auto_running = False
+                   
     def save_topic_callback(self, msg):
         self.write_log("파라미터 변경") # [추가] 파라미터 변경 로그
         data = json.loads(msg.data)       
@@ -469,15 +660,12 @@ class IntegratedRobotControl(Node):
                 self.stop_robot(force=True)
             
             # 새 모드 진입
+            # 새 모드 진입
             if mode == "auto":
                 self.write_log("자율 모드 전환")
                 self.set_state("대기")
                 self.current_mode = mode
-                if not self.is_auto_running:
-                    self.is_auto_running = True
-                    self.auto_thread = threading.Thread(target=self.run_auto_process)
-                    self.auto_thread.daemon = True
-                    self.auto_thread.start()
+
             
             elif mode == "follow":
                 self.write_log("추종 모드 전환")
@@ -618,12 +806,12 @@ class IntegratedRobotControl(Node):
         # 1. 회전(Z) 제어
         normalized_error_x = error_x / 160.0
         self.filtered_error_x = (self.filter_alpha * normalized_error_x) + ((1.0 - self.filter_alpha) * self.filtered_error_x)
-        v_human_z = -1.4 * self.filtered_error_x if abs(self.filtered_error_x) > 0.05 else 0.0
+        v_human_z = -1.0 * self.filtered_error_x if abs(self.filtered_error_x) > 0.05 else 0.0
 
         # 2. 직진(X) 제어
         error_area = self.target_area - area
         self.filtered_error_area = (self.filter_alpha_area * error_area) + ((1.0 - self.filter_alpha_area) * self.filtered_error_area)
-        v_human_x = 1.5 * self.filtered_error_area 
+        v_human_x = 1.0 * self.filtered_error_area 
         if abs(self.filtered_error_area) < 0.04: 
             v_human_x = 0.0
 
@@ -654,7 +842,10 @@ class IntegratedRobotControl(Node):
     # ====================================================================
     def image_callback(self, msg):
         self.latest_msg = msg
-        if self.current_mode == "auto" and self.auto_step == "ALIGN" and self.is_auto_running:
+        # 자율주행(auto) 중이거나 수동(manual) 시퀀스 이동 중일 때 모두 허용
+        is_align_executable = (self.current_mode == "auto" and self.is_auto_running) or (self.current_mode == "manual" and self.is_manual_moving)
+        
+        if is_align_executable and self.auto_step == "ALIGN":
             self.process_aruco_alignment(msg)
 
     def execute_move(self, linear, angular, duration):
@@ -663,58 +854,64 @@ class IntegratedRobotControl(Node):
         cmd.angular.z = float(angular)
         end_time = time.time() + duration
         while time.time() < end_time and rclpy.ok():
-            if not self.is_auto_running or self.current_mode != "auto":
+            # 자율주행 중도 아니고, 수동 시퀀스 이동 중도 아니라면 (정상적인 정지 명령 등) 그때만 멈춤
+            if not self.is_auto_running and not self.is_manual_moving:
                 self.stop_robot(force=True)
                 return False 
             self.cmd_pub.publish(cmd)
             time.sleep(0.01)
-        self.stop_robot()
-        time.sleep(0.5)
-        return True
 
     def process_aruco_alignment(self, msg):
-        if self.current_wp_idx >= len(self.waypoints): return
+        # 안전 변수 체크 수정
+        if self.current_seq_idx >= len(self.sequence_list): return
         
         if self.camera_matrix is None or self.dist_coeffs is None:
             self.get_logger().warning("⏳ 카메라 캘리브레이션 정보 대기 중...")
             time.sleep(0.5)
             return
         
+        # State 2, 3, 4 제어 로직 생략 (기존 코드 그대로 유지)
         if self.align_state == 2:
-            self.log_state("정렬 중..")
-            if self.execute_move(0.0, -0.5, 3.14):
-                self.align_state = 3
+            if self.execute_move(0.0, -0.5, 3.14): self.align_state = 3
             return
         elif self.align_state == 3:
             move_dist = self.current_z_before_turn - self.target_dist_z
             move_speed = 0.05 if move_dist > 0 else -0.05
             move_duration = abs(move_dist / move_speed)
-            #self.log_state(f"정렬 중..")
-            if self.execute_move(move_speed, 0.0, move_duration):
-                self.align_state = 4
+            if self.execute_move(move_speed, 0.0, move_duration): self.align_state = 4
             return
         elif self.align_state == 4:
-            #self.log_state("정렬 중..")
-            if self.execute_move(0.0, 0.5, 3.14):
-                self.align_state = 1 
+            if self.execute_move(0.0, 0.5, 3.14): self.align_state = 1 
             return
 
-        target_id = self.waypoints[self.current_wp_idx][3]
+        # 이미지 전처리
         np_arr = np.frombuffer(msg.data, np.uint8)
         frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-        
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gamma = 1.5 
-        lut = np.array(255 * (np.arange(256) / 255.0) ** gamma, dtype=np.uint8)
-        gray = cv2.LUT(gray, lut)
-        gray = cv2.GaussianBlur(gray, (3, 3), 0)
-        gray = self.clahe.apply(gray)
+        gray = self.clahe.apply(cv2.GaussianBlur(cv2.LUT(gray, np.array(255 * (np.arange(256) / 255.0) ** 1.5, dtype=np.uint8)), (3, 3), 0))
         
         corners, ids, _ = self.detector.detectMarkers(gray)
 
-        if ids is not None and target_id in ids:
-            idx = np.where(ids == target_id)[0][0]
-            c = corners[idx][0]
+        target_id = None
+        target_idx_in_detection = -1
+
+        # 💡 [마커 추적 핵심 변경] 화면 중앙(픽셀 오차 최소)에 위치한 마커를 동적으로 타겟팅
+        if ids is not None:
+            flattened_ids = ids.flatten()
+            min_center_error = float('inf')
+            
+            for i, marker_id in enumerate(flattened_ids):
+                c = corners[i][0]
+                pixel_x_err = abs(int(np.mean(c[:, 0])) - 320) # 640 해상도 가로 중심 기준 오차 계산
+
+                if pixel_x_err < min_center_error:
+                    min_center_error = pixel_x_err
+                    target_id = marker_id
+                    target_idx_in_detection = i
+
+        # [정렬 및 구동] 선정된 target_id 정보를 사용하여 정렬 수행 (기존 로직 유지)
+        if target_id is not None and target_idx_in_detection != -1:
+            c = corners[target_idx_in_detection][0]
             success, rvec, tvec = cv2.solvePnP(
                 np.array([[-0.04, 0.04, 0], [0.04, 0.04, 0], [0.04, -0.04, 0], [-0.04, -0.04, 0]], dtype=np.float32),
                 c, self.camera_matrix, self.dist_coeffs
@@ -743,11 +940,20 @@ class IntegratedRobotControl(Node):
                 elif self.align_state == 5:
                     self.stop_robot()
                     self.align_done = True
+                    # 💡 정렬 완료 시점에 검출된 ID를 멤버 변수에 저장하여 촬영 함수에서 쓸 수 있도록 함
+                    self.current_detected_marker_id = target_id
         else:
             if self.align_state == 1:
                 self.stop_robot()
 
     def send_nav_goal(self, x, y, yaw):
+        # ====================================================================
+        # [추가 권장] 정수 데이터(예: 0, 1) 수신 시 ROS2 float 형식 충돌 방지 형변환
+        # ====================================================================
+        x = float(x)
+        y = float(y)
+        yaw = float(yaw)
+
         goal = NavigateToPose.Goal()
         goal.pose.header.frame_id = 'map'
         goal.pose.pose.position.x = x
@@ -761,7 +967,6 @@ class IntegratedRobotControl(Node):
         future = self.nav_client.send_goal_async(goal)
 
         while rclpy.ok() and not future.done():
-    # is_manual_moving 플래그 조건 추가
             if not self.is_auto_running and not self.is_returning_home and not self.is_manual_moving:
                 return False
             time.sleep(0.1)
@@ -772,110 +977,121 @@ class IntegratedRobotControl(Node):
         result_future = self.goal_handle.get_result_async()
 
         while rclpy.ok() and not result_future.done():
-    # is_manual_moving 플래그 조건 추가
             if not self.is_auto_running and not self.is_returning_home and not self.is_manual_moving:
-                self.set_state("정지")  # 존재하지 않는 log_state 오타 수정
-                self.write_log("정지")  # 강제 취소 시 로그 기록 추가
+                self.set_state("정지")  
+                self.write_log("정지")  
                 self.cancel_active_goal() 
                 self.stop_robot(force=True)
                 return False
             time.sleep(0.1)
 
         result = result_future.result()
-        return result.status == 4 
+        return result.status == 4
 
     def run_auto_process(self):
-        self.set_state("자율 주행")       # 대시보드 상태 표출
-        self.write_log("자율 주행 시작")    # DB 기록
+        # 데이터가 없는 경우 예외 처리
+        if not self.sequence_list or not self.waypoint_dict:
+            self.get_logger().warn("⚠️ 실행할 시퀀스 데이터가 존재하지 않습니다.")
+            self.is_auto_running = False
+            return
 
-        for i in range(self.current_wp_idx, len(self.waypoints)):
+        self.set_state("자율 주행")
+        self.write_log("자율 주행 시작")
+
+        # 시퀀스 리스트에 적힌 순서대로 루프 수행
+        for i in range(self.current_seq_idx, len(self.sequence_list)):
             if not self.is_auto_running: break
             
-            self.current_wp_idx = i
-            x, y, yaw, marker_id = self.waypoints[i]
+            self.current_seq_idx = i
+            wp_id = self.sequence_list[i]
+            wp = self.waypoint_dict.get(wp_id)
 
-            # --- [NAV 단계] ---
+            if wp is None:
+                self.get_logger().error(f"❌ 데이터베이스에 Waypoint ID {wp_id}가 존재하지 않습니다. 스킵합니다.")
+                continue
+
+            x = wp['x']
+            y = wp['y']
+            wp_type = wp['type']
+            
+            # 💡 [타입 조건 반영] ud 타입이면 방향을 무시(0.0)하고, d 나 ms이면 지정된 theta 사용
+            yaw = wp['theta'] if wp_type in ['d', 'ms'] else 0.0
+
+            # --- [NAV 단계: 공통 이동] ---
             self.auto_step = "NAV"
-            self.set_state("wp 이동")        # 대시보드 상태
-            self.write_log(f"{i+1}번 wp 이동") # DB 로그
+            self.set_state("wp 이동")
+            self.write_log(f"ID {wp_id} ({wp_type} 타입) 목표 지점으로 이동 중")
 
             if not self.send_nav_goal(x, y, yaw):
                 if not self.is_auto_running: break
                 continue
 
-            # --- [ALIGN 단계] ---
-            self.auto_step = "ALIGN"
-            self.set_state("마커 촬영")
-            self.write_log(f"{marker_id}번 id 마커 촬영")
-            
-            self.align_done = False
-            self.align_state = 1
-            align_start_time = time.time()
-            
-            # 정렬 시간 초과 체크 (V1 로직 유지)
-            while rclpy.ok() and not self.align_done:
-                if not self.is_auto_running: break
-                if time.time() - align_start_time > 5.0:
-                    self.write_log(f"WP {i+1} 정렬 시간 초과 (30s)")
-                    self.stop_robot()
-                    break 
-                time.sleep(0.1)
+            # --- [이동 완료 후 타입별 행동 분기 처리] ---
+            if wp_type == "ud":
+                self.write_log(f"ID {wp_id} (ud) 방향 무시 도착 완료")
+                time.sleep(0.5) # 잠시 대기 후 다음 wp로 진행
+                
+            elif wp_type == "d":
+                self.write_log(f"ID {wp_id} (d) 지정 방향 정렬 및 도착 완료")
+                time.sleep(0.5)
+                
+            elif wp_type == "ms":
+                # --- [ALIGN 단계: 정밀 정렬] ---
+                self.auto_step = "ALIGN"
+                self.set_state("마커 정렬")
+                self.write_log(f"ID {wp_id} (ms) 카메라 기반 마커 정렬 시작")
+                
+                self.align_done = False
+                self.align_state = 1
+                align_start_time = time.time()
+                
+                # 정렬 완료 또는 타임아웃(30초)까지 대기
+                while rclpy.ok() and not self.align_done:
+                    if not self.is_auto_running: break
+                    if time.time() - align_start_time > 30.0:
+                        self.write_log(f"ID {wp_id} 정렬 시간 초과 (30s)")
+                        self.stop_robot()
+                        break 
+                    time.sleep(0.1)
 
-            if not self.is_auto_running: break
-
-            # --- [DONE 단계 / 이미지 전송] ---
-            self.auto_step = "DONE"
-            self.write_log(f"WP {i+1} 이미지 데이터 전송")
-            
-            for capture_idx in range(10):
                 if not self.is_auto_running: break
-                self.publish_capture_image(marker_id)
-                time.sleep(0.3) 
-            
-            self.write_log(f"WP {i+1} 촬영 종료")
+
+                # --- [DONE 단계: 이미지 전송 및 촬영] ---
+                self.auto_step = "DONE"
+                self.set_state("마커 촬영")
+                
+                # 정렬 중 카메라 화면 중심에서 가장 에러가 적었던 마커 ID 가져오기
+                detected_id = self.current_detected_marker_id if self.current_detected_marker_id is not None else wp_id
+                self.write_log(f"마커 {detected_id}번 ID 기반 촬영 데이터 전송 시작")
+                
+                for capture_idx in range(10):
+                    if not self.is_auto_running: break
+                    self.publish_capture_image(detected_id)
+                    time.sleep(0.3) 
+                
+                self.write_log(f"ID {wp_id} 촬영 완료 및 종료")
 
             if not self.is_auto_running: 
                 self.set_state("정지")
                 break
 
         # --- [복귀 로직] ---
-        # 모든 미션을 정상적으로 완료했을 때만 실행
-        if self.is_auto_running and self.current_wp_idx >= len(self.waypoints) - 1:
+        if self.is_auto_running and self.current_seq_idx >= len(self.sequence_list) - 1:
             self.write_log("임무 완료 후 복귀")
-            self.set_state("이동") # 홈으로 이동 중 상태
+            self.set_state("이동")
             
             self.is_returning_home = True
-            self.current_wp_idx = 0
+            self.current_seq_idx = 0
             self.send_nav_goal(*self.start_pose)
             self.is_returning_home = False
             
             self.set_state("대기")
-            self.write_log("home 도착 및 대기")
+            self.write_log("home 도착 및 다음 스케줄 대기")
             
-            self.current_mode = "manual"
-            self.write_log("수동 모드 전환")
-            
+        # 오타 lse를 지우고 깔끔하게 두 줄만 남깁니다.
         self.is_auto_running = False
         self.stop_robot()
-
-        if self.is_auto_running and self.current_wp_idx >= len(self.waypoints) - 1:
-            self.write_log("임무 완료 후 복귀") # [로그]
-            self.set_state("이동") # [상태]
-            
-            self.is_returning_home = True
-            self.current_wp_idx = 0
-            self.send_nav_goal(*self.start_pose)
-            self.is_returning_home = False
-            
-            self.set_state("대기") # [상태]
-            self.write_log("home 도착 및 대기") # [로그]
-            
-            self.current_mode = "manual"
-            self.write_log("수동 모드 전환") # [로그]
-            
-        self.is_auto_running = False
-        self.stop_robot()
-
+        
     def publish_capture_image(self, marker_id): # [수정] 인자 추가
         if self.latest_msg is None: return
         np_arr = np.frombuffer(self.latest_msg.data, np.uint8)

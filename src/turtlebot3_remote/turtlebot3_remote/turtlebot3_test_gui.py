@@ -1,6 +1,8 @@
 import json
 import math
 import tkinter as tk
+import os
+import yaml
 from tkinter import messagebox, scrolledtext, ttk
 from nav_msgs.msg import OccupancyGrid
 import rclpy
@@ -18,7 +20,7 @@ class RosWorkerNode(Node):
     def __init__(self, gui_app):
         super().__init__("gui_dashboard_node_tk")
         self.gui_app = gui_app
-        
+        self.save_pub = self.create_publisher(String, '/save_params', 10)
         self.current_wp_idx = 0
 
         # Map 관련
@@ -65,8 +67,8 @@ class RosWorkerNode(Node):
         msg.data = command
         self.remote_pub.publish(msg)
         
-    def update_nav2_params(self, speed, inflation, tolerance):
-        # 1. Controller Server 파라미터 변경 (속도 및 오차)
+    def update_nav2_params(self, controller_name, speed, inflation, tolerance):
+        # 1. Controller Server 파라미터 변경
         req_ctrl = SetParameters.Request()
         req_ctrl.parameters = [
             Parameter(name='FollowPathFast.desired_linear_vel', value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=float(speed))),
@@ -78,16 +80,27 @@ class RosWorkerNode(Node):
         if self.param_client_ctrl.service_is_ready():
             self.param_client_ctrl.call_async(req_ctrl)
             
-        # 2. Local Costmap 파라미터 변경 (장애물 회피 범위/Inflation 반경)
+        # 2. Local Costmap 파라미터 변경
         req_costmap = SetParameters.Request()
         req_costmap.parameters = [
             Parameter(name='inflation_layer.inflation_radius', value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=float(inflation)))
         ]
         if self.param_client_costmap.service_is_ready():
             self.param_client_costmap.call_async(req_costmap)
-        
-        self.get_logger().info(f"🎛️ [파라미터 전송 완료] 속도: {speed:.2f}, 회피 반경: {inflation:.2f}, 오차: {tolerance:.2f}")
 
+        # 3. YAML 파일 저장 요청 (JSON 전송)
+        save_msg = String()
+        data = {
+            'controller': controller_name,
+            'speed': speed,
+            'inflation': inflation,
+            'tolerance': tolerance
+        }
+        save_msg.data = json.dumps(data)
+        self.save_pub.publish(save_msg)     
+        
+        self.get_logger().info(f"✅ {controller_name} 적용 및 저장 완료")
+        
     # ---------------------------------------------
     # Map Test 원본 로직 유지
     # ---------------------------------------------
@@ -268,9 +281,35 @@ class GuiDashboardTk:
             "SAFE": {"speed": 0.15, "inflation": 0.55, "tolerance": 0.25},
             "ACK": {"speed": 0.16, "inflation": 0.55, "tolerance": 0.25}
         }
-
+        self.load_params_from_yaml()
+        
         self.init_ui()
-
+        
+        initial_ctrl = "RPP"
+        self.scale_speed.set(self.controller_presets[initial_ctrl]["speed"])
+        self.scale_inflation.set(self.controller_presets[initial_ctrl]["inflation"])
+        self.scale_tolerance.set(self.controller_presets[initial_ctrl]["tolerance"])
+    
+    def load_params_from_yaml(self):
+        """실제 저장된 YAML 파일이 존재하면 읽어와서 GUI 프리셋 데이터를 업데이트합니다."""
+        # 실제 YAML 파라미터 파일이 저장되는 경로를 입력하세요.
+        yaml_path = os.path.expanduser('~/remote_ws/src/turtlebot3_remote/yaml/param_config.yaml')
+        
+        if os.path.exists(yaml_path):
+            try:
+                with open(yaml_path, 'r') as f:
+                    saved_data = yaml.safe_load(f)
+                    
+                if saved_data:
+                    # YAML 구조가 컨트롤러별로 묶여있다고 가정할 때 (예: RPP: {speed: 0.2, ...})
+                    for ctrl_name in ["RPP", "SAFE", "ACK"]:
+                        if ctrl_name in saved_data:
+                            self.controller_presets[ctrl_name].update(saved_data[ctrl_name])
+                            
+                    print("📊 [YAML] 기존에 저장된 파라미터 값을 성공적으로 불러와 GUI에 반영했습니다.")
+            except Exception as e:
+                print(f"⚠️ YAML 파라미터 로드 중 오류 발생: {e}")
+    
     def set_ros_node(self, ros_node): 
         self.ros_node = ros_node
 
@@ -436,12 +475,20 @@ class GuiDashboardTk:
     
     def apply_nav2_params(self):
         if not self.ros_node: return
+        
+        # 현재 GUI 콤보박스에서 선택된 컨트롤러 이름("RPP", "SAFE", "ACK" 등)을 가져옵니다.
+        controller_name = self.ctrl_combo.get()
+        
         speed = self.scale_speed.get()
         inflation = self.scale_inflation.get()
         tolerance = self.scale_tolerance.get()
         
-        self.ros_node.update_nav2_params(speed, inflation, tolerance)
-        self.append_log(f"\n🎛️ [파라미터 적용]\n  - 최대 속도: {speed} m/s\n  - 회피 반경: {inflation} m\n  - 도착 오차: {tolerance} m\n")
+        # 첫 번째 인자로 controller_name을 추가하여 4개의 인자를 정확히 전달합니다.
+        self.ros_node.update_nav2_params(controller_name, speed, inflation, tolerance)
+        
+        # 로그 출력 부분도 선택된 컨트롤러 이름이 나오도록 수정합니다.
+        self.append_log(f"\n🎛️ [{controller_name} 파라미터 적용]\n  - 최대 속도: {speed} m/s\n  - 회피 반경: {inflation} m\n  - 도착 오차: {tolerance} m\n")
+        
     # ---------------------------------------------
     # 루틴(WP List) 관리 로직
     # ---------------------------------------------

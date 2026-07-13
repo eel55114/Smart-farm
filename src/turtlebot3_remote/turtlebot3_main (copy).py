@@ -27,7 +27,6 @@ class IntegratedRobotControl(Node):
     def __init__(self):
         super().__init__('integrated_robot_control')
         
-        self.is_first_callback = True
         self.publish_param_pub = self.create_publisher(String, '/publish_param', 10)
         self.current_active_controller = "RPP"
         
@@ -63,8 +62,7 @@ class IntegratedRobotControl(Node):
         self.latest_msg = None
         self.goal_handle = None
         self.is_battery_low = False
-        self.is_returning_home = False
-        self.is_manual_moving = False
+        self.is_returning_home = False 
 
         # 자율주행 스레드 관리 변수
         self.auto_thread = None
@@ -128,17 +126,8 @@ class IntegratedRobotControl(Node):
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.capture_pub = self.create_publisher(CompressedImage, '/captured_image/compressed', 10)
         self.state_pub = self.create_publisher(String, 'robot_state', 10)
-        self.log_pub = self.create_publisher(String, 'robot_log', 10) # [추가] DB 저장용 로그 토픽
         self.ctrl_pub = self.create_publisher(String, 'controller_selector', qos_profile)
 
-        # [추가] GUI의 단일 목표 지점 이동(수동 모드)을 감지하기 위한 구독자
-        from geometry_msgs.msg import PoseStamped
-        self.goal_sub = self.create_subscription(PoseStamped, '/goal_pose', self.manual_goal_callback, 10)
-
-        # 상태 및 로그 도배 방지용 변수
-        self.last_state = ""
-        self.last_log = ""
-        
         # Subscriber (기존)
         self.sub_image = self.create_subscription(CompressedImage, '/sidecam/image_raw/compressed', self.image_callback, 10)
         self.sub_mode = self.create_subscription(String, 'robot_mode', self.mode_callback, 10)
@@ -174,8 +163,10 @@ class IntegratedRobotControl(Node):
         self.apply_stored_params("RPP")
            
     def save_topic_callback(self, msg):
-        self.write_log("파라미터 변경") # [추가] 파라미터 변경 로그
-        data = json.loads(msg.data)       
+        """GUI에서 파라미터 변경 요청이 들어왔을 때"""
+        data = json.loads(msg.data)
+        
+        # GUI에서 수정한 컨트롤러가 현재 활성 컨트롤러라면 상태 업데이트
         self.current_active_controller = data['controller']
         
         # YAML 업데이트 및 전체 상태 발행
@@ -270,50 +261,12 @@ class IntegratedRobotControl(Node):
     # ====================================================================
     # 공통 및 유틸리티 함수
     # ====================================================================
-    def set_state(self, state_str):
-        """실시간 대시보드 표출용 (상태가 바뀔 때만 발행)"""
-        if self.last_state != state_str:
-            msg = String()
-            msg.data = state_str
-            self.state_pub.publish(msg)
-            self.last_state = state_str
-            self.get_logger().info(f"[STATE] {state_str}")
+    def log_state(self, info_text):
+        msg = String()
+        msg.data = info_text
+        self.state_pub.publish(msg)
+        self.get_logger().info(f"[STATE] {info_text}")
 
-    def write_log(self, log_str):
-        """DB 저장용 로그 (연속 도배 방지되나, 파라미터 변경 등은 예외 허용 가능)"""
-        if self.last_log != log_str or log_str == "파라미터 변경":
-            msg = String()
-            msg.data = log_str
-            self.log_pub.publish(msg)
-            self.last_log = log_str
-            self.get_logger().info(f"[LOG] {log_str}")
-
-    def manual_goal_callback(self, msg):
-        """수동 모드에서 GUI로 목표 지점을 보냈을 때 감지 및 도착 확인"""
-        # 아래 코드가 위 def 라인보다 4칸 더 들여쓰기 되어야 합니다.
-        if self.current_mode == "manual":
-            # 도착 상태를 기다리기 위해 스레드 실행
-            threading.Thread(target=self._manual_goal_process, args=(msg,), daemon=True).start()
-    
-    
-    def _manual_goal_process(self, msg):
-        # 아래 코드들도 마찬가지로 들여쓰기를 맞춰주세요.
-        self.is_manual_moving = True
-        self.set_state("이동")
-        self.write_log("목표 이동")
-        
-        x = msg.pose.position.x
-        y = msg.pose.position.y
-        z = msg.pose.orientation.z
-        w = msg.pose.orientation.w
-        yaw = math.atan2(2.0 * w * z, 1.0 - 2.0 * z * z)
-
-        if self.send_nav_goal(x, y, yaw):
-            self.set_state("대기")
-            self.write_log("도착 및 대기")
-            
-        #self.is_manual_moving = False
-            
     def select_controller_callback(self, msg):
         data = msg.data.strip().lower()
         ctrl_msg = String()
@@ -339,11 +292,6 @@ class IntegratedRobotControl(Node):
         self.ctrl_pub.publish(ctrl_msg)
         
         if selected_ctrl_key:
-            # [수정] 컨트롤러 로그 단순화 매핑
-            if selected_ctrl_key == "RPP": self.write_log("fast 컨트롤러")
-            elif selected_ctrl_key == "SAFE": self.write_log("safe 컨트롤러")
-            elif selected_ctrl_key == "ACK": self.write_log("stable 컨트롤러")
-            
             # 1. 내부 변수 업데이트
             self.current_active_controller = selected_ctrl_key
             # 2. YAML에서 파라미터 가져와서 Nav2에 적용
@@ -425,16 +373,14 @@ class IntegratedRobotControl(Node):
 
     def _navigate_home_thread(self):
         self.is_returning_home = True
-        self.set_state("이동") # [추가] 수동 복귀 중 이동 상태
         if self.send_nav_goal(*self.start_pose):
-            self.set_state("대기")
-            self.write_log("home 도착 및 대기")
+            self.log_state("home 도착")
         self.is_returning_home = False
 
     def battery_callback(self, msg):
         if msg.percentage <= 20.0 and not self.is_battery_low:
             self.is_battery_low = True
-            self.write_state("비상 복귀")
+            self.log_state("비상 복귀")
             self.is_auto_running = False
             self.current_mode = "manual"
             self.cancel_active_goal()
@@ -445,15 +391,6 @@ class IntegratedRobotControl(Node):
     # 모드 관리 및 리모컨 제어 (★ Follow 모드 병합)
     # ====================================================================
     def mode_callback(self, msg):
-        if self.is_first_callback:
-            self.is_first_callback = False
-            return
-
-        mode = msg.data
-        
-        if self.current_mode == mode:
-            return
-    
         if self.is_battery_low: return
         mode = msg.data.lower().strip()
         
@@ -470,8 +407,7 @@ class IntegratedRobotControl(Node):
             
             # 새 모드 진입
             if mode == "auto":
-                self.write_log("자율 모드 전환")
-                self.set_state("대기")
+                self.log_state("자율 모드")
                 self.current_mode = mode
                 if not self.is_auto_running:
                     self.is_auto_running = True
@@ -480,21 +416,17 @@ class IntegratedRobotControl(Node):
                     self.auto_thread.start()
             
             elif mode == "follow":
-                self.write_log("추종 모드 전환")
-                self.set_state("대기")
+                self.log_state("추종 모드")
                 self.current_mode = mode
                 # Follow 모드 초기화
                 self.target_human = None
-                self.is_human_detected = False # 추가: 사람 발견 상태 초기화
                 self.filtered_error_x = 0.0
                 self.filtered_error_area = 0.0
                 self.cancel_active_goal() # Nav2가 잡고있는 제어권 회수
                 
             else: # manual
-                self.write_log("수동 모드 전환")
-                self.set_state("대기")
+                self.log_state("수동 모드")
                 self.current_mode = "manual"
-                self.last_manual_cmd = "" # 추가: 수동 조작 상태 초기화
                 self.cancel_active_goal()
                 self.stop_robot(force=True)
 
@@ -504,23 +436,13 @@ class IntegratedRobotControl(Node):
         if data == 's':
             self.is_auto_running = False  
             self.is_returning_home = False
-            self.is_manual_moving = False  # 이동 플래그 초기화
             self.current_mode = "manual"
-            self.set_state("정지")
-            self.write_log("정지")         # 누락되었던 정지 로그 추가
+            self.log_state("정지 명령")
             self.cancel_active_goal()
             self.target_linear_vel = 0.0
             self.target_angular_vel = 0.0
             self.stop_robot(force=True)
             return
-        
-        if data == 'h':
-            threading.Thread(target=self._navigate_home_thread, daemon=True).start()
-            return
-            
-        if data.startswith('f') or data.startswith('b') or data.startswith('l') or data.startswith('r'):
-            self.set_state("이동")
-            self.write_log("목표 이동")
 
         if self.current_mode != "manual" or self.is_battery_low: 
             return
@@ -589,23 +511,16 @@ class IntegratedRobotControl(Node):
         time_diff = (now - self.last_human_time).nanoseconds / 1e9 
         
         if self.target_human is None or time_diff > 0.5:
-            self.set_state("사람 손실") # [추가] 상태 업데이트
-            
             self.target_human = None  
             self.human_angle_range = None 
             self.filtered_error_x = 0.0  
             self.filtered_error_area = 0.0  
-            twist = Twist()
+            twist.linear.x = 0.0
+            twist.angular.z = 0.0
             self.cmd_pub.publish(twist)  
             return
-        else:
-            # [추가] 사람 발견 및 추종 시의 로직
-            if self.last_state != "사람 추종":
-                self.write_log("작업자 발견")
-                self.write_log("작업자 추종")
-            self.set_state("사람 추종")
 
-        target = self.target_human       
+        target = self.target_human
         area = (target.width * target.height) / (320 * 240)
         error_x = target.x_center - self.center_x
 
@@ -761,8 +676,7 @@ class IntegratedRobotControl(Node):
         future = self.nav_client.send_goal_async(goal)
 
         while rclpy.ok() and not future.done():
-    # is_manual_moving 플래그 조건 추가
-            if not self.is_auto_running and not self.is_returning_home and not self.is_manual_moving:
+            if not self.is_auto_running and not self.is_returning_home:
                 return False
             time.sleep(0.1)
 
@@ -772,10 +686,8 @@ class IntegratedRobotControl(Node):
         result_future = self.goal_handle.get_result_async()
 
         while rclpy.ok() and not result_future.done():
-    # is_manual_moving 플래그 조건 추가
-            if not self.is_auto_running and not self.is_returning_home and not self.is_manual_moving:
-                self.set_state("정지")  # 존재하지 않는 log_state 오타 수정
-                self.write_log("정지")  # 강제 취소 시 로그 기록 추가
+            if not self.is_auto_running and not self.is_returning_home:
+                self.log_state("정지")
                 self.cancel_active_goal() 
                 self.stop_robot(force=True)
                 return False
@@ -785,93 +697,60 @@ class IntegratedRobotControl(Node):
         return result.status == 4 
 
     def run_auto_process(self):
-        self.set_state("자율 주행")       # 대시보드 상태 표출
-        self.write_log("자율 주행 시작")    # DB 기록
-
+        self.log_state("자율 주행")
         for i in range(self.current_wp_idx, len(self.waypoints)):
             if not self.is_auto_running: break
             
             self.current_wp_idx = i
             x, y, yaw, marker_id = self.waypoints[i]
 
-            # --- [NAV 단계] ---
             self.auto_step = "NAV"
-            self.set_state("wp 이동")        # 대시보드 상태
-            self.write_log(f"{i+1}번 wp 이동") # DB 로그
-
             if not self.send_nav_goal(x, y, yaw):
                 if not self.is_auto_running: break
                 continue
 
-            # --- [ALIGN 단계] ---
             self.auto_step = "ALIGN"
-            self.set_state("마커 촬영")
-            self.write_log(f"{marker_id}번 id 마커 촬영")
-            
             self.align_done = False
             self.align_state = 1
             align_start_time = time.time()
             
-            # 정렬 시간 초과 체크 (V1 로직 유지)
             while rclpy.ok() and not self.align_done:
                 if not self.is_auto_running: break
-                if time.time() - align_start_time > 5.0:
-                    self.write_log(f"WP {i+1} 정렬 시간 초과 (30s)")
+                
+                if time.time() - align_start_time > 30.0:
+                    self.log_state(f"다음 WP 이동 중..")
                     self.stop_robot()
                     break 
                 time.sleep(0.1)
 
             if not self.is_auto_running: break
 
-            # --- [DONE 단계 / 이미지 전송] ---
             self.auto_step = "DONE"
-            self.write_log(f"WP {i+1} 이미지 데이터 전송")
+            current_marker_id = self.waypoints[i][3]
+            self.log_state(f"WP {i+1} 이미지 데이터 전송")
             
             for capture_idx in range(10):
-                if not self.is_auto_running: break
-                self.publish_capture_image(marker_id)
+                if not self.is_auto_running: 
+                    break
+                
+                # 이미지 발행
+                self.publish_capture_image(current_marker_id)
+                # 다음 발행까지 0.3초 대기 (10번 * 0.3초 = 약 3초)
                 time.sleep(0.3) 
             
-            self.write_log(f"WP {i+1} 촬영 종료")
-
+            self.log_state(f"WP {i+1} 촬영 종료")
+            
             if not self.is_auto_running: 
-                self.set_state("정지")
+                self.log_state("정지")
                 break
 
-        # --- [복귀 로직] ---
-        # 모든 미션을 정상적으로 완료했을 때만 실행
         if self.is_auto_running and self.current_wp_idx >= len(self.waypoints) - 1:
-            self.write_log("임무 완료 후 복귀")
-            self.set_state("이동") # 홈으로 이동 중 상태
-            
+            self.log_state("복귀")
             self.is_returning_home = True
             self.current_wp_idx = 0
             self.send_nav_goal(*self.start_pose)
             self.is_returning_home = False
-            
-            self.set_state("대기")
-            self.write_log("home 도착 및 대기")
-            
             self.current_mode = "manual"
-            self.write_log("수동 모드 전환")
-            
-        self.is_auto_running = False
-        self.stop_robot()
-
-        if self.is_auto_running and self.current_wp_idx >= len(self.waypoints) - 1:
-            self.write_log("임무 완료 후 복귀") # [로그]
-            self.set_state("이동") # [상태]
-            
-            self.is_returning_home = True
-            self.current_wp_idx = 0
-            self.send_nav_goal(*self.start_pose)
-            self.is_returning_home = False
-            
-            self.set_state("대기") # [상태]
-            self.write_log("home 도착 및 대기") # [로그]
-            
-            self.current_mode = "manual"
-            self.write_log("수동 모드 전환") # [로그]
             
         self.is_auto_running = False
         self.stop_robot()

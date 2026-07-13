@@ -46,6 +46,9 @@ setup(
             'robot_data_preprocessor = turtlebot3_remote.robot_data_preprocessor:main',
             'turtlebot3_main = turtlebot3_remote.turtlebot3_main:main',
             'turtlebot3_human_publisher = turtlebot3_remote.turtlebot3_human_publisher:main',
+            'turtlebot3_chan = turtlebot3_remote.turtlebot3_chan:main',
+            'turtlebot3_kyu = turtlebot3_remote.turtlebot3_kyu:main',
+            'imu = turtlebot3_remote.imu:main',
         ],
     },
 )
