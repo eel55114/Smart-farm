@@ -1,0 +1,14 @@
+controllers:
+  ACK:
+    inflation: 0.55
+    speed: 0.16
+    tolerance: 0.05
+  RPP:
+    inflation: 0.55
+    speed: 0.24
+    tolerance: 0.05
+  SAFE:
+    inflation: 0.45
+    speed: 0.24
+    tolerance: 0.05
+current_controller: SAFE
